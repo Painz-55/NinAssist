@@ -8,6 +8,11 @@
   </ItemGroup>
 
   <PropertyGroup>
+    <LocalArchiveBuild Condition="'$(LocalArchiveBuild)' == ''">false</LocalArchiveBuild>
+    <DistributionChannel>Installer</DistributionChannel>
+    <DistributionChannel Condition="'$(LocalArchiveBuild)' == 'true'">LocalArchive</DistributionChannel>
+    <DefineConstants Condition="'$(LocalArchiveBuild)' == 'true'">$(DefineConstants);LOCAL_ARCHIVE</DefineConstants>
+    <UpdateRepositoryUrl Condition="'$(UpdateRepositoryUrl)' == ''">https://github.com/Painz-55/NinAssist</UpdateRepositoryUrl>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
@@ -16,6 +21,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyMetadata Include="UpdateRepositoryUrl" Value="$(UpdateRepositoryUrl)" />
+    <AssemblyMetadata Include="DistributionChannel" Value="$(DistributionChannel)" />
     <None Include="..\..\firebase.config.json" Condition="Exists('..\..\firebase.config.json')" Link="firebase.config.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\firebase.config.example.json" Condition="!Exists('..\..\firebase.config.json')" Link="firebase.config.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\updates.config.json" Condition="Exists('..\..\updates.config.json')" Link="updates.config.json" CopyToOutputDirectory="PreserveNewest" />

@@ -2,6 +2,7 @@ using System.Text.Json;
 using NinOnlineAutoAssist.Core.Security;
 using NinOnlineAutoAssist.Core.Updates;
 using Velopack;
+using System.Reflection;
 
 namespace NinOnlineAutoAssist.App;
 
@@ -36,20 +37,33 @@ static class Program
         try
         {
             AppPaths.Settings.EnsureConfig();
-            var updateStatus = "Atualizador aguardando configuração do repositório.";
+#if LOCAL_ARCHIVE
+            // Separate maintainer archive executable, never enabled by a config file or command-line flag.
+            // Authentication and individual Firebase authorization below remain mandatory.
+            string updateStatus = "BUILD LOCAL / ARQUIVO — sem updater. Login Firebase obrigatório.";
+#else
+            string updateStatus;
             try
             {
-                var updatePath = Path.Combine(AppContext.BaseDirectory, "updates.config.json");
-                var updates = File.Exists(updatePath) ? JsonSerializer.Deserialize<AutomaticUpdateConfig>(File.ReadAllText(updatePath)) : null;
-                if (updates?.ValidatedRepositoryUrl() is { } repository)
-                {
-                    using var updater = new StartupUpdateForm(new VelopackUpdateBackend(repository));
-                    updater.ShowDialog();
-                    if (updater.Result.Outcome != StartupUpdateOutcome.Continue) return;
-                    updateStatus = updater.Result.Message;
-                }
+                // Feed is embedded at build time, not controlled by an editable JSON or command-line switch.
+                var feed = Assembly.GetExecutingAssembly().GetCustomAttributes<AssemblyMetadataAttribute>()
+                    .Single(a => a.Key == "UpdateRepositoryUrl").Value;
+                var repository = new AutomaticUpdateConfig { RepositoryUrl = feed ?? "" }.ValidatedRepositoryUrl()
+                    ?? throw new InvalidOperationException("Missing update feed");
+                using var updater = new StartupUpdateForm(new VelopackUpdateBackend(repository));
+                updater.ShowDialog();
+                if (updater.Result.Outcome == StartupUpdateOutcome.Blocked)
+                    MessageBox.Show(updater.Result.Message, "Atualização obrigatória", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                if (updater.Result.Outcome != StartupUpdateOutcome.Continue) return;
+                updateStatus = updater.Result.Message;
             }
-            catch { updateStatus = "Atualizador indisponível/não configurado; login Firebase continua obrigatório."; }
+            catch
+            {
+                MessageBox.Show("A atualização obrigatória não pôde ser iniciada. Reinstale pelo Setup oficial. O programa não será aberto.",
+                    "Atualização obrigatória", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+#endif
             var config = JsonSerializer.Deserialize<FirebaseConfig>(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "firebase.config.json")))
                 ?? throw new AccessDeniedException("Configuração Firebase ausente.");
             using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(12) };

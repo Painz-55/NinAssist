@@ -46,7 +46,7 @@ jobs:
           if (-not $env:FIREBASE_PUBLIC_CONFIG) { throw 'Configure FIREBASE_PUBLIC_CONFIG_JSON com a configuração web pública, nunca uma conta de serviço.' }
           $configPath = Join-Path $env:RUNNER_TEMP 'firebase-public-config.json'
           $env:FIREBASE_PUBLIC_CONFIG | Set-Content -Encoding utf8 $configPath
-          ./scripts/Build-Release.ps1 -Version $env:PACK_VERSION -RepositoryUrl $env:FEED_URL -FirebaseConfigPath $configPath
+          ./scripts/Build-Release.ps1 -Version $env:PACK_VERSION -RepositoryUrl $env:FEED_URL -FirebaseConfigPath $configPath -OutputDirectory "artifacts/$env:PACK_VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: installer-and-updates

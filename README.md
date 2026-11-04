@@ -18,9 +18,30 @@ As configurações de exemplo não contêm personagem nem autorização ofensiva
 
 ## Atualizações automáticas
 
-Veja [docs/UPDATES.md](docs/UPDATES.md). Ao abrir uma instalação gerenciada, o aplicativo procura, baixa e aplica novas versões estáveis **sem confirmação**, antes do login. Se a atualização falhar, mantém a versão atual e exige login normalmente. Fechar a janela de atualização cancela a abertura.
+Fluxo único: **baixar Setup → instalar → abrir pelo atalho → verificar atualização obrigatória → atualizar/reiniciar se necessário → login Firebase → programa**. A verificação acontece em toda abertura; se já estiver na versão atual, segue para o login sem reinstalar. Se não conseguir consultar o GitHub, baixar, validar ou iniciar a aplicação da atualização, **bloqueia a abertura**, sem modo offline. Fechar a janela de atualização cancela a abertura. Veja [docs/UPDATES.md](docs/UPDATES.md).
 
-Para receber atualizações é necessário instalar o Setup gerado pelo Velopack. Executar uma pasta antiga/portable não a converte em instalação atualizável. O repositório de releases deve ser público; o código-fonte pode permanecer privado. Nenhum token GitHub vai no cliente.
+Distribua somente o **Setup.exe** gerado pelo Velopack; todos os demais assets precisam permanecer na release para o updater. Builds soltas e o pacote portable são bloqueados neste código. Abrir o EXE instalado diretamente também executa a mesma verificação: não existe outro EXE de interface, parâmetro de pular, preferência local ou acesso offline ao login. O feed é incorporado na compilação; editar/remover `updates.config.json` não desativa nem redireciona o updater. O repositório de releases deve ser público; nenhum token GitHub vai no cliente.
+
+Isso controla o fluxo do executável oficial, não impede engenharia reversa, alterações no binário ou execução de versões antigas sem esse bloqueio por quem controla o PC. Autorização Firebase continua obrigatória em cada abertura. Compilações padrão seguem esse fluxo; há um canal separado de arquivo local para o mantenedor, descrito abaixo.
+
+## Organização local e histórico de versões
+
+Quando este repositório fica em `NinAssist`, os scripts colocam saídas **fora do código-fonte**:
+
+- `../Com Login/<versão>`: executável local com login Firebase e sem updater, para manter versões e testar regressões.
+- `../Instalador/<versão>/releases`: Setup oficial e assets do updater obrigatório.
+- `../Instalador/<versão>/publish`: arquivos que compõem o instalador, não uma build local para abrir solta.
+- A build original sem login permanece separada e congelada; não é gerada por estes scripts.
+
+Para arquivar uma nova build local:
+
+```powershell
+./scripts/Build-Local.ps1 -Version 1.1.1 -FirebaseConfigPath 'CAMINHO/firebase.config.json' -SettingsPath 'CAMINHO/ninautoassist.config.json'
+```
+
+O script recusa sobrescrever uma pasta de versão existente, inclui identificação e hashes e preserva as builds anteriores. `SettingsPath` é opcional; sem ele, usa padrões limpos. As configurações pessoais de cada cópia ficam naquela pasta; não envie essas builds ao GitHub.
+
+O canal local é definido **na compilação** por `LocalArchiveBuild=true` e aparece como **LOCAL / ARQUIVO** no login. Isso não remove autenticação, permissões ou telemetria. Não existe opção em JSON ou argumento de execução que converta o instalador nesse canal. `Build-Release.ps1` força `LocalArchiveBuild=false` para o instalador. Os canais são binários diferentes, mesmo quando compartilham a mesma versão de funcionalidades.
 
 ## Dados e segurança
 

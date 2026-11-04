@@ -20,6 +20,9 @@ internal sealed class LoginForm : Form
         _client = client;
         _status.Text = updateStatus ?? "";
         Text = "Nin Online AutoAssist — Login";
+#if LOCAL_ARCHIVE
+        Text += " — LOCAL / ARQUIVO";
+#endif
         ClientSize = new Size(390, 430); StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false;
         var layout = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,

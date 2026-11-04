@@ -34,21 +34,22 @@ public class AutomaticUpdateTests
         Assert.Equal(new[] { "check", "download", "apply" }, backend.Calls);
     }
     [Fact]
-    public async Task PendingUpdateAppliesWithoutDownloadingAgain()
+    public async Task EveryStartupChecksAgainBeforeAllowingLogin()
     {
-        var backend = new FakeBackend { HasPendingUpdate = true };
-        await StartupUpdateRunner.RunAsync(backend, _ => { }, default);
-        Assert.Equal(new[] { "apply" }, backend.Calls);
+        var backend = new FakeBackend { Available = false };
+        for (var i = 0; i < 2; i++)
+            Assert.Equal(StartupUpdateOutcome.Continue, (await StartupUpdateRunner.RunAsync(backend, _ => { }, default)).Outcome);
+        Assert.Equal(new[] { "check", "check" }, backend.Calls);
     }
     [Theory]
     [InlineData("check")]
     [InlineData("download")]
     [InlineData("apply")]
-    public async Task FailureKeepsCurrentVersionAndDoesNotExposeException(string failure)
+    public async Task AnyFailureBlocksLoginAndDoesNotExposeException(string failure)
     {
         var backend = new FakeBackend { Failure = failure };
         var result = await StartupUpdateRunner.RunAsync(backend, _ => { }, default);
-        Assert.Equal(StartupUpdateOutcome.Continue, result.Outcome);
+        Assert.Equal(StartupUpdateOutcome.Blocked, result.Outcome);
         Assert.DoesNotContain("secret", result.Message);
         if (failure != "apply") Assert.DoesNotContain("apply", backend.Calls);
     }
@@ -58,7 +59,9 @@ public class AutomaticUpdateTests
     public async Task NoInstallationOrNoOfferNeverApplies(bool installed, bool available)
     {
         var backend = new FakeBackend { IsInstalled = installed, Available = available };
-        Assert.Equal(StartupUpdateOutcome.Continue, (await StartupUpdateRunner.RunAsync(backend, _ => { }, default)).Outcome);
+        Assert.Equal(installed ? StartupUpdateOutcome.Continue : StartupUpdateOutcome.Blocked,
+            (await StartupUpdateRunner.RunAsync(backend, _ => { }, default)).Outcome);
+        Assert.Equal(installed ? new[] { "check" } : Array.Empty<string>(), backend.Calls);
         Assert.DoesNotContain("download", backend.Calls);
         Assert.DoesNotContain("apply", backend.Calls);
     }
@@ -73,6 +76,29 @@ public class AutomaticUpdateTests
         if (stage == "before") cts.Cancel();
         var result = await StartupUpdateRunner.RunAsync(backend, _ => { }, cts.Token);
         Assert.Equal(StartupUpdateOutcome.Canceled, result.Outcome);
+        Assert.DoesNotContain("apply", backend.Calls);
+    }
+    [Fact]
+    public async Task EarlierSuccessfulCheckDoesNotAuthorizeAnotherStartupWhenOffline()
+    {
+        var backend = new FakeBackend { Available = false };
+        Assert.Equal(StartupUpdateOutcome.Continue, (await StartupUpdateRunner.RunAsync(backend, _ => { }, default)).Outcome);
+        backend.Failure = "check";
+        Assert.Equal(StartupUpdateOutcome.Blocked, (await StartupUpdateRunner.RunAsync(backend, _ => { }, default)).Outcome);
+        Assert.Equal(new[] { "check", "check" }, backend.Calls);
+    }
+    [Fact]
+    public async Task CancellationDuringNoUpdateResponseDoesNotAllowLogin()
+    {
+        using var cts = new CancellationTokenSource();
+        var backend = new FakeBackend { Available = false, AfterCall = _ => cts.Cancel() };
+        Assert.Equal(StartupUpdateOutcome.Canceled, (await StartupUpdateRunner.RunAsync(backend, _ => { }, cts.Token)).Outcome);
+    }
+    [Fact]
+    public async Task UnexpectedCancellationWithoutUserCancelIsBlocked()
+    {
+        var backend = new FakeBackend { AfterCall = _ => throw new OperationCanceledException() };
+        Assert.Equal(StartupUpdateOutcome.Blocked, (await StartupUpdateRunner.RunAsync(backend, _ => { }, default)).Outcome);
         Assert.DoesNotContain("apply", backend.Calls);
     }
     [Fact]
@@ -117,9 +143,8 @@ public class AutomaticUpdateTests
     private sealed class FakeBackend : IStartupUpdateBackend
     {
         public bool IsInstalled { get; init; } = true;
-        public bool HasPendingUpdate { get; init; }
         public bool Available { get; init; } = true;
-        public string? Failure { get; init; }
+        public string? Failure { get; set; }
         public Action<string>? AfterCall { get; init; }
         public List<string> Calls { get; } = new();
         private void Call(string name)
