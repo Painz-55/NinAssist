@@ -40,7 +40,7 @@ if (args.Length == 1 && args[0] == "--hold-timing")
 
 if (args.Length == 3 && args[0] == "--live-snapshot" && int.TryParse(args[1], out var livePid))
 {
-    using var provider = new ReadOnlyGameStateProvider(livePid, args[2], new SystemMonotonicClock());
+    using var provider = new ReadOnlyGameStateProvider(livePid, args[2] == "--auto" ? "" : args[2], new SystemMonotonicClock());
     for (var i = 0; i < 5; i++)
     {
         provider.GetSnapshot();
@@ -73,7 +73,7 @@ if (args.Length == 3 && args[0] == "--watch-buffs" && int.TryParse(args[1], out 
 
 if (args.Length == 3 && args[0] == "--navigation-snapshot" && int.TryParse(args[1], out var navigationPid))
 {
-    using var provider = new ReadOnlyGameStateProvider(navigationPid, args[2], new SystemMonotonicClock()) { ReadNavigation = true };
+    using var provider = new ReadOnlyGameStateProvider(navigationPid, args[2] == "--auto" ? "" : args[2], new SystemMonotonicClock()) { ReadNavigation = true };
     for (var i = 0; i < 3; i++)
     {
         provider.GetSnapshot();
@@ -88,7 +88,7 @@ if (args.Length == 3 && args[0] == "--navigation-snapshot" && int.TryParse(args[
 
 if (args.Length == 3 && args[0] == "--map-players-snapshot" && int.TryParse(args[1], out var mapPlayersPid))
 {
-    using var provider = new ReadOnlyGameStateProvider(mapPlayersPid, args[2], new SystemMonotonicClock()) { ReadMapPlayers = true };
+    using var provider = new ReadOnlyGameStateProvider(mapPlayersPid, args[2] == "--auto" ? "" : args[2], new SystemMonotonicClock()) { ReadMapPlayers = true };
     for (var i = 0; i < 3; i++)
     {
         provider.GetSnapshot();
@@ -122,7 +122,7 @@ if (args.Length == 2 && args[0] == "--watch-state-probe" && int.TryParse(args[1]
 if (args.Length != 1)
 {
     Console.Error.WriteLine("Usage: NinOnlineAutoAssist.Diagnostics <assembly.dll> | --process <NinOnline PID>");
-    Console.Error.WriteLine("Read-only live projection: --live-snapshot <PID> <character name>");
+    Console.Error.WriteLine("Read-only live projection: --live-snapshot <PID> <character name|--auto>");
     Console.Error.WriteLine("Calibration only: --state-probe <PID> | --watch-state-probe <PID> (35 seconds)");
     return 2;
 }

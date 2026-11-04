@@ -14,7 +14,9 @@ dotnet build NinOnlineAutoAssist.sln
 
 Copie `firebase.config.example.json` para `firebase.config.json` e preencha a configuração pública do seu projeto. Ative login e-mail/senha e aplique as regras de `firebase/firestore.rules`; consulte `firebase/README.md`. Sem configuração válida e autorização, o aplicativo não libera uso. Nunca inclua contas de serviço, senhas, tokens ou chaves privadas.
 
-As configurações de exemplo não contêm personagem nem autorização ofensiva. O usuário deve configurar o personagem observado; os módulos iniciam desligados e F12 permanece a parada de emergência. Somente o último e-mail autenticado é lembrado, sem senha ou token persistido.
+As configurações de exemplo não contêm personagem nem autorização ofensiva. Desde a versão 1.1.1, o nick é detectado automaticamente pelo índice do jogador local em uma build de jogo validada; não há busca por nomes próximos. É possível desmarcar a detecção e informar o nome manualmente. Os módulos iniciam desligados e F12 permanece a parada de emergência. Somente o último e-mail autenticado é lembrado, sem senha ou token persistido.
+
+A identidade é fixada após leituras consistentes. Mudança de personagem exige reconexão e não transfere automação ligada para o novo personagem. Jogo no login/seleção, mais de um cliente, estado inconsistente ou fingerprints desconhecidos não liberam entrada automática. Compatibilidade e validação: [docs/GAME-COMPATIBILITY.md](docs/GAME-COMPATIBILITY.md).
 
 ## Atualizações automáticas
 

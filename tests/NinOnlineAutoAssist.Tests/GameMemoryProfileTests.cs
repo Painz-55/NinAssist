@@ -70,4 +70,42 @@ public sealed class GameMemoryProfileTests
         var steam = GameMemoryProfile.Steam;
         Assert.Same(steam, GameMemoryProfile.Select(steam.Sha256.ToLowerInvariant(), steam.CommonSha256.ToLowerInvariant()));
     }
+
+    [Fact]
+    public void UpdatedBuildUsesItsOwnCompleteValidatedDescriptor()
+    {
+        var profile = GameMemoryProfile.Updated20261104;
+        Assert.Same(profile, GameMemoryProfile.Select(profile.Sha256.ToLowerInvariant(), profile.CommonSha256.ToLowerInvariant()));
+        Assert.Equal("OM7GDFX0dPg", profile.LocalIndex);
+        Assert.Equal("duuQOuUTBJY", profile.Name);
+        Assert.Equal("o8rQOYIt1ty", profile.Village);
+        Assert.Equal("fHgQOwoEbyl", profile.Vitals);
+        Assert.Equal("fyVQOokOv0o", profile.MaxVitals);
+        Assert.Equal("QVgGMJROkU3", profile.Running);
+        Assert.Equal(new SelectedTargetMemoryFields("w8qGDsNEwFp", "BXnQ2GyGUKg", "knZQ2QNEBE4", 1), profile.SelectedTarget);
+        Assert.Equal(new CastMemoryFields("Ja3GDo42GCj", "eFZGMAADG0J", "InyGhm238KE", "r4tQinq00hW", "DhXQ0WMjwZR"), profile.CastTiming);
+        Assert.Equal("iw8Q0fchltc", profile.Buffs);
+        Assert.Equal("xAiQL0x7sTw", profile.BuffActive);
+        Assert.Equal("kjPQLDIccf4", profile.BuffName);
+        Assert.Equal("FJ5QLissuoH", profile.BuffDuration);
+        Assert.True(profile.MapIdentityInRoots);
+        Assert.Equal("FoDZvQ5kmNE", profile.MapIdentity);
+        Assert.Equal("PrZQrSDFQpW", profile.Tiles);
+        Assert.Equal("EXcZCbJ5PI3", profile.Projectiles);
+        foreach (var property in typeof(GameMemoryProfile).GetProperties().Where(p => p.PropertyType == typeof(string) && !p.GetMethod!.IsStatic))
+        {
+            Assert.False(string.IsNullOrWhiteSpace((string?)property.GetValue(profile)));
+            Assert.NotEqual(property.GetValue(GameMemoryProfile.Steam), property.GetValue(profile));
+            Assert.NotEqual(property.GetValue(GameMemoryProfile.Standalone), property.GetValue(profile));
+        }
+    }
+
+    [Fact]
+    public void UpdatedGameNeverAcceptsMixedPreviousCommonAssembly()
+    {
+        var profiles = new[] { GameMemoryProfile.Standalone, GameMemoryProfile.Steam, GameMemoryProfile.Updated20261104 };
+        foreach (var game in profiles)
+            foreach (var common in profiles.Where(p => p != game))
+                Assert.Throws<InvalidOperationException>(() => GameMemoryProfile.Select(game.Sha256, common.CommonSha256));
+    }
 }

@@ -27,7 +27,8 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
     private readonly DataTarget _target;
     private readonly ClrRuntime _runtime;
     private readonly IMonotonicClock _clock;
-    private readonly string _expectedName;
+    private readonly LocalCharacterIdentity _identity;
+    public string? DetectedCharacterName => _identity.Name;
     private ulong _globalsMethodTable, _rootsMethodTable;
     public int ProcessId => _process.Id;
     public string GameDirectory { get; }
@@ -44,8 +45,7 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
 
     public ReadOnlyGameStateProvider(int pid, string expectedName, IMonotonicClock clock)
     {
-        if (string.IsNullOrWhiteSpace(expectedName)) throw new ArgumentException("Confirm the local character name first.");
-        _expectedName = expectedName;
+        _identity = new LocalCharacterIdentity(expectedName);
         _clock = clock;
         _process = Process.GetProcessById(pid);
         try
@@ -89,7 +89,8 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
                 throw new InvalidOperationException("Type identity changed; reconnect required");
             var domain = _runtime.AppDomains.Single();
             var local = StaticInt(globals, Profile.LocalIndex, domain);
-            var selected = StaticInt(globals, Profile.SelectedIndex, domain);
+            var selectedState = ReadSelectedTarget(globals, domain);
+            var selected = selectedState.PlayerIndex;
             var arrayField = roots.GetStaticFieldByName(Profile.Players) ?? throw new InvalidOperationException("Player array unavailable");
             if (!arrayField.IsInitialized(domain) || arrayField.GetAddress(domain) == 0)
                 throw new InvalidOperationException("Game state not initialized");
@@ -100,7 +101,16 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
             var player = array.GetObjectValue(local);
             if (player.IsNull) throw new InvalidOperationException("Local player missing");
             var name = player.ReadStringField(Profile.Name, 64);
-            if (name != _expectedName) throw new InvalidOperationException("Local character changed; confirm identity and reconnect.");
+            if (_identity.IsInvalidated || !LocalCharacterIdentity.IsValidName(name))
+                throw new InvalidOperationException("Local character changed/unavailable; confirm identity and reconnect.");
+            if (_identity.Name is { } expected && name != expected)
+            {
+                // Latch a corroborated character change: even returning to the old character must not resume modules.
+                if (StaticInt(globals, Profile.LocalIndex, domain) == local &&
+                    arrayField.ReadObject(domain).Address == arrayObject.Address)
+                    _identity.ConfirmStableObservation(name, player.ReadStringField(Profile.Name, 64));
+                throw new InvalidOperationException("Local character changed; reconnect required.");
+            }
             var map = Field<int>(player, Profile.Map);
             if (map <= 0) throw new InvalidOperationException("Player outside a valid map");
             var x = Coordinate(player, Profile.PixelX);
@@ -169,8 +179,9 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
                 }
             }
             if (StaticInt(globals, Profile.LocalIndex, domain) != local ||
-                StaticInt(globals, Profile.SelectedIndex, domain) != selected ||
-                Field<int>(player, Profile.Map) != map || arrayField.ReadObject(domain).Address != arrayObject.Address)
+                ReadSelectedTarget(globals, domain) != selectedState ||
+                Field<int>(player, Profile.Map) != map || arrayField.ReadObject(domain).Address != arrayObject.Address ||
+                !_identity.ConfirmStableObservation(name, player.ReadStringField(Profile.Name, 64)))
                 throw new InvalidOperationException("State changed during read; retry next tick");
             var snapshot = new GameSnapshot
             {
@@ -265,11 +276,32 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
         return value;
     }
 
+    private (int PlayerIndex, int RawIndex, int Kind, ulong ObjectAddress) ReadSelectedTarget(ClrType globals, ClrAppDomain domain)
+    {
+        if (Profile.SelectedTarget is not { } fields)
+        {
+            var index = StaticInt(globals, Profile.SelectedIndex, domain);
+            return (index, index, 0, 0);
+        }
+        var field = globals.GetStaticFieldByName(fields.GlobalObject) ?? throw new InvalidOperationException("Target object unavailable");
+        if (!field.IsInitialized(domain) || field.GetAddress(domain) == 0) throw new InvalidOperationException("Target state uninitialized");
+        if (field.Type is null || field.Type.IsValueType) throw new InvalidOperationException("Target schema changed");
+        var obj = field.ReadObject(domain);
+        if (obj.IsNull) return (0, 0, 0, 0);
+        if (obj.Type?.Name != field.Type.Name) throw new InvalidOperationException("Target identity changed during read");
+        var kind = Field<int>(obj, fields.Kind);
+        var rawIndex = Field<int>(obj, fields.Index);
+        return (fields.PlayerIndex(kind, rawIndex), rawIndex, kind, obj.Address);
+    }
+
+    private int ReadMapIdentity(ClrType roots, ClrAppDomain domain, ClrObject mapObject) => Profile.MapIdentityInRoots
+        ? StaticInt(roots, Profile.MapIdentity, domain) : Field<int>(mapObject, Profile.MapIdentity);
+
     private NavigationFrame ReadTerrain(ClrType roots, ClrAppDomain domain, int localIndex, int map, double x, double y, long captured)
     {
         var mapField = roots.GetStaticFieldByName(Profile.MapRoot) ?? throw new InvalidOperationException("Map root unavailable");
         var mapObject = mapField.ReadObject(domain);
-        if (mapObject.IsNull || Field<int>(mapObject, Profile.MapIdentity) != map)
+        if (mapObject.IsNull || ReadMapIdentity(roots, domain, mapObject) != map)
             throw new InvalidOperationException("Map identity mismatch");
         var tilesObject = mapObject.ReadObjectField(Profile.Tiles);
         if (!tilesObject.IsArray || tilesObject.Type?.Name != "Common.TileRec[,]") throw new InvalidOperationException("Tile schema unavailable");
@@ -364,7 +396,7 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
         }
         if (mapField.ReadObject(domain).Address != mapObject.Address ||
             mapObject.ReadObjectField(Profile.Tiles).Address != tilesObject.Address ||
-            Field<int>(mapObject, Profile.MapIdentity) != map || projectileField.ReadObject(domain).Address != projectileObject.Address)
+            ReadMapIdentity(roots, domain, mapObject) != map || projectileField.ReadObject(domain).Address != projectileObject.Address)
             throw new InvalidOperationException("Terrain changed during read");
         return new(map, captured, originX, originY, width, height, cells, true, hazards) { IgnoredOwnShots = ignoredOwn };
     }

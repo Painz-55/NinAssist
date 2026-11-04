@@ -84,7 +84,7 @@ public sealed class LiveContext : IDisposable
     public LiveFrame? Frame => Volatile.Read(ref _frame) is { } frame && _clock.NowMs - frame.CapturedAtMs <= 500 ? frame : null;
     public GameSnapshot? Snapshot() => Frame?.Snapshot;
 
-    public LiveContext(AutoAssistConfig config, AccessLease access)
+    public LiveContext(AutoAssistConfig config, AccessLease access, bool detectCharacterAutomatically = false)
     {
         _access = access;
         if (!access.IsValid) throw new AccessDeniedException("Login obrigatório antes da conexão.");
@@ -102,7 +102,7 @@ public sealed class LiveContext : IDisposable
                 pid = processes[0].Id;
             }
             finally { foreach (var process in processes) process.Dispose(); }
-            Provider = new ReadOnlyGameStateProvider(pid, config.Live.CharacterName, _clock);
+            Provider = new ReadOnlyGameStateProvider(pid, detectCharacterAutomatically ? "" : config.Live.CharacterName, _clock);
             Log.Log(LogLevel.Info, $"Perfil detectado: {Provider.Profile.Id}; instalação: {Provider.GameDirectory}; hashes do par verificados");
             LiveKeySettings.Validate(config.Live.PunishKeys, config.Live.TurnActivationKeys);
             _input = new LiveInputController(CanDispatch, Log, Provider.GameDirectory,
@@ -153,7 +153,7 @@ public sealed class LiveContext : IDisposable
                 }
                 finally { _dispatchingStamina = false; }
             }, config.CombatAssist.StaminaDisableBelowPercent, config.CombatAssist.StaminaEnableAbovePercent);
-            Log.Log(LogLevel.Info, $"Live connection: PID {pid}, character {config.Live.CharacterName}; modules OFF; Turn activation: {string.Join(" / ", config.Live.TurnActivationKeys)}; giro automático com SubPunish autorizado durante buff/+1s; combo sem alvo {string.Join(" → ", config.Live.PunishKeys)} {(CounterAttackAuthorized ? "authorized" : "DISABLED")}");
+            Log.Log(LogLevel.Info, $"Live connection: PID {pid}, character {(detectCharacterAutomatically ? "detecção automática pelo índice local" : config.Live.CharacterName)}; modules OFF; Turn activation: {string.Join(" / ", config.Live.TurnActivationKeys)}; giro automático com SubPunish autorizado durante buff/+1s; combo sem alvo {string.Join(" → ", config.Live.PunishKeys)} {(CounterAttackAuthorized ? "authorized" : "DISABLED")}");
             Log.Log(LogLevel.Info, $"AA/Tool OFF e desautorizado: {config.CombatAssist.AttackKey} {CombatGeometry.DescribeAttack(config.CombatAssist)} / Tool {config.CombatAssist.ToolKey} frontal <= {config.CombatAssist.ToolRange} tiles; Follow OFF, tecla {config.CombatAssist.FollowHoldKey}");
             Log.Log(LogLevel.Info, $"Auto Stamina OFF; binding válido={_input.StaminaBindingValid}; {_input.StaminaBindingStatus}; {_input.StaminaBindingProblem}");
             _automation = new ResponsiveAutomationLoop(Step, ex =>

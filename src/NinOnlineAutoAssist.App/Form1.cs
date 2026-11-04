@@ -51,6 +51,7 @@ public sealed class Form1 : Form
     private Button _btnAutoTurning = null!, _btnSubPunish = null!, _btnCombat = null!, _btnFollow = null!, _btnStamina = null!;
     private Label _lblCombat = null!, _lblFollow = null!, _lblStamina = null!;
     private TextBox _txtCharacter = null!;
+    private CheckBox _autoCharacter = null!;
     private CheckBox _allowSequence = null!;
     private CheckBox _allowCombat = null!;
     private RichTextBox _rtbLog = null!;
@@ -194,8 +195,14 @@ public sealed class Form1 : Form
         rightPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
         rightPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
         rightPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        rightPanel.Controls.Add(new Label { Text = "CONEXÃO AO VIVO — NOME DO PERSONAGEM", Dock = DockStyle.Fill, ForeColor = Dim, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
-        _txtCharacter = new TextBox { Dock = DockStyle.Fill, BackColor = PanelAlt, ForeColor = Fg };
+        _autoCharacter = new CheckBox { Text = "DETECTAR NICK AUTOMATICAMENTE — jogador local", Checked = true, Dock = DockStyle.Fill, ForeColor = Dim };
+        rightPanel.Controls.Add(_autoCharacter, 0, 0);
+        _txtCharacter = new TextBox { Dock = DockStyle.Fill, BackColor = PanelAlt, ForeColor = Fg, ReadOnly = true, PlaceholderText = "Aguardando personagem no mapa…" };
+        _autoCharacter.CheckedChanged += (_, _) =>
+        {
+            _txtCharacter.ReadOnly = _autoCharacter.Checked;
+            _txtCharacter.Text = _autoCharacter.Checked ? "" : _config?.Live.CharacterName ?? "";
+        };
         rightPanel.Controls.Add(_txtCharacter, 0, 1);
         var connectionButtons = new FlowLayoutPanel { Dock = DockStyle.Fill };
         var connect = new Button { Text = "CONECTAR / RECONECTAR", AutoSize = true, BackColor = Accent, ForeColor = Color.Black, FlatStyle = FlatStyle.Flat };
@@ -340,7 +347,7 @@ public sealed class Form1 : Form
     {
         AppPaths.Settings.EnsureConfig();
         _config = ConfigLoader.Load(ConfigPath);
-        _txtCharacter.Text = _config.Live.CharacterName;
+        _txtCharacter.Text = _autoCharacter.Checked ? "" : _config.Live.CharacterName;
         _allowSequence.Text = $"AUTORIZAR {string.Join(" → ", _config.Live.PunishKeys)} + GIRO SUB (buff/+1s)";
         _allowSequence.Checked = false; // Offensive permission is explicit for each app session.
         AppendLog(LogLevel.Info, "AO VIVO: módulos OFF. SubPunish autorizado gira automaticamente para o alvo durante buff/+1s. Fora da janela, Turn exige tecla. Combo sem alvo/tecla; remoção antecipada é HEURÍSTICA.", null);
@@ -389,15 +396,15 @@ public sealed class Form1 : Form
     private void ConnectToGame()
     {
         if (!_session.Access.IsValid) return;
-        if (string.IsNullOrWhiteSpace(_txtCharacter.Text))
+        if (!_autoCharacter.Checked && string.IsNullOrWhiteSpace(_txtCharacter.Text))
         {
             AppendLog(LogLevel.Warning, "Informe o nome exato do personagem para conectar.", null);
             return;
         }
         DisconnectFromGame();
-        _config = _config with { Live = _config.Live with { CharacterName = _txtCharacter.Text.Trim(),
+        _config = _config with { Live = _config.Live with { CharacterName = _autoCharacter.Checked ? _config.Live.CharacterName : _txtCharacter.Text.Trim(),
             AllowCounterAttackSequence = _allowSequence.Checked } };
-        _ctx = new LiveContext(_config, _session.Access);
+        _ctx = new LiveContext(_config, _session.Access, _autoCharacter.Checked);
         _ctx.SetCombatAuthorized(_allowCombat.Checked);
         _ctx.MemoryLog.EntryLogged += OnLogEntry;
         foreach (var entry in _ctx.MemoryLog.Snapshot()) OnLogEntry(entry);
@@ -536,7 +543,11 @@ public sealed class Form1 : Form
             if (!Allowed(AppFeature.ResourceInspection)) foreach (var child in OwnedForms.OfType<ResourceInspectionForm>()) child.Close();
             AppendLog(LogLevel.Warning, "Permissões atualizadas pelo administrador; módulos desarmados.", null);
         }
-        if (_ctx?.Frame is { } observed) _session.ObserveCharacter(observed.PlayerName);
+        if (_ctx?.Frame is { } observed)
+        {
+            if (_autoCharacter.Checked && _txtCharacter.Text != observed.PlayerName) _txtCharacter.Text = observed.PlayerName;
+            _session.ObserveCharacter(observed.PlayerName);
+        }
         RefreshModeBadge();
         RefreshStatus();
     }
