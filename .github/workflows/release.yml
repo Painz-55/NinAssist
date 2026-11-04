@@ -13,7 +13,7 @@ jobs:
   release:
     runs-on: windows-latest
     env:
-      FEED_URL: ${{ vars.UPDATES_REPOSITORY }}
+      FEED_URL: ${{ vars.UPDATES_REPOSITORY || format('{0}/{1}', github.server_url, github.repository) }}
       RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
