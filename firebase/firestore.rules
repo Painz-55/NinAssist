@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function usageAllowed() {
+      return signedIn() && request.auth.token.email is string
+        && request.auth.token.email.lower() != 'pain@ninassist.com.br';
+    }
+    function active() {
+      let user = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return user.enabled == true && user.features is map
+        && (!('expiresAt' in user) || (user.expiresAt is timestamp && user.expiresAt > request.time));
+    }
+    match /users/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
+    }
+    match /appSessions/{sessionId} {
+      function characterUpdateValid() {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        return !changed.hasAny(['characterName', 'characterSequence', 'characterChangedAt'])
+          || (changed.hasAll(['characterName', 'characterSequence', 'characterChangedAt'])
+            && !('endedAt' in request.resource.data)
+            && request.resource.data.characterName is string
+            && request.resource.data.characterName.size() > 0 && request.resource.data.characterName.size() <= 64
+            && request.resource.data.characterName != resource.data.get('characterName', '')
+            && request.resource.data.characterSequence is int
+            && request.resource.data.characterSequence == resource.data.get('characterSequence', 0) + 1
+            && request.resource.data.characterChangedAt == request.time
+            && matchingEvent());
+      }
+      function matchingEvent() {
+        let eventId = string(request.resource.data.characterSequence);
+        let event = getAfter(/databases/$(database)/documents/appSessions/$(sessionId)/events/$(eventId)).data;
+        return event.uid == request.auth.uid && event.email == request.auth.token.email
+          && event.kind == 'characterChanged'
+          && event.characterName == request.resource.data.characterName
+          && event.previousCharacterName == resource.data.get('characterName', '')
+          && event.sequence == request.resource.data.characterSequence
+          && event.recordedAt == request.time;
+      }
+      allow get, list: if signedIn() && resource.data.uid == request.auth.uid;
+      allow create: if usageAllowed() && active()
+        && sessionId.matches('^[a-f0-9]{32}$')
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'version', 'startedAt', 'lastSeenAt'])
+        && request.resource.data.keys().hasAll(['uid', 'email', 'version', 'startedAt', 'lastSeenAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.version is string && request.resource.data.version.size() <= 64
+        && request.resource.data.startedAt == request.time
+        && request.resource.data.lastSeenAt == request.time;
+      allow update: if usageAllowed() && active() && resource.data.uid == request.auth.uid
+        && !('endedAt' in resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeenAt', 'endedAt', 'characterName', 'characterSequence', 'characterChangedAt'])
+        && request.resource.data.lastSeenAt == request.time
+        && (!('endedAt' in request.resource.data) || request.resource.data.endedAt == request.time)
+        && characterUpdateValid();
+      allow delete: if false;
+
+      match /events/{eventId} {
+        function sessionBefore() {
+          return get(/databases/$(database)/documents/appSessions/$(sessionId)).data;
+        }
+        function sessionAfter() {
+          return getAfter(/databases/$(database)/documents/appSessions/$(sessionId)).data;
+        }
+        allow get, list: if signedIn() && sessionBefore().uid == request.auth.uid;
+        allow create: if usageAllowed() && active()
+          && request.resource.data.keys().hasOnly(['uid', 'email', 'kind', 'previousCharacterName', 'characterName', 'sequence', 'recordedAt'])
+          && request.resource.data.keys().hasAll(['uid', 'email', 'kind', 'previousCharacterName', 'characterName', 'sequence', 'recordedAt'])
+          && request.resource.data.uid == request.auth.uid && request.resource.data.email == request.auth.token.email
+          && request.resource.data.kind == 'characterChanged'
+          && request.resource.data.characterName is string && request.resource.data.characterName.size() > 0
+          && request.resource.data.characterName.size() <= 64
+          && request.resource.data.previousCharacterName == sessionBefore().get('characterName', '')
+          && request.resource.data.characterName != request.resource.data.previousCharacterName
+          && request.resource.data.sequence is int && request.resource.data.sequence > 0
+          && eventId == string(request.resource.data.sequence)
+          && request.resource.data.sequence == sessionBefore().get('characterSequence', 0) + 1
+          && request.resource.data.recordedAt == request.time
+          && sessionBefore().uid == request.auth.uid && !('endedAt' in sessionBefore())
+          && sessionAfter().characterSequence == request.resource.data.sequence
+          && sessionAfter().characterName == request.resource.data.characterName
+          && sessionAfter().characterChangedAt == request.time && sessionAfter().lastSeenAt == request.time
+          && !('endedAt' in sessionAfter());
+        allow update, delete: if false;
+      }
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

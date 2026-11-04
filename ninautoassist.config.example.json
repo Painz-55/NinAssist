@@ -1,0 +1,19 @@
+{
+  "Live": {
+    "CharacterName": "",
+    "AllowCounterAttackSequence": false,
+    "PunishMode": "Legacy",
+    "PunishKeys": [ "A", "Q", "S" ],
+    "TurnActivationKeys": [ "RightCtrl" ],
+    "PunishFirstToSecondMs": 0,
+    "PunishTriggerDelayMs": 0,
+    "PunishSecondToThirdMs": 200,
+    "PunishSequenceTimeoutMs": 1500
+  },
+  "General": {
+    "Logging": true,
+    "EmergencyStopKey": "F12",
+    "LogFile": "logs/autoassist.log"
+  },
+  "AutoCastTurn": { "LeadTimeMs": 100 }
+}

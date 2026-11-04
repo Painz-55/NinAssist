@@ -1,0 +1,631 @@
+using System.Drawing;
+using NinOnlineAutoAssist.Core;
+using NinOnlineAutoAssist.Core.Config;
+using NinOnlineAutoAssist.Core.Events;
+using NinOnlineAutoAssist.Core.Logging;
+using NinOnlineAutoAssist.Core.Models;
+using NinOnlineAutoAssist.Live;
+using NinOnlineAutoAssist.Core.Security;
+
+namespace NinOnlineAutoAssist.App;
+
+/// <summary>
+/// Nin Online AutoAssist — main window.
+/// Live-only UI. Reading is independent from input authorization; modules start OFF.
+/// Live mode uses a verified read-only profile and explicit held-key authorization.
+/// Unmapped cooldowns/threats are not synthesized.
+/// </summary>
+public sealed class Form1 : Form
+{
+    private readonly FirebaseSession _session;
+    private int _permissionsMask;
+    public bool ReturnToLogin { get; private set; }
+    private AppFeature SubFeature => _config.Live.PunishMode == LivePunishMode.AnchoredExperimental ? AppFeature.SubPunishNew : AppFeature.SubPunishLegacy;
+    private bool Allowed(AppFeature feature) => _session.Access.Allows(feature);
+    private int PermissionsMask => Enum.GetValues<AppFeature>().Aggregate(0, (mask, feature) => Allowed(feature) ? mask | (1 << (int)feature) : mask);
+    private Button _inspectionButton = null!;
+    private Label _account = null!;
+    // ── palette ─────────────────────────────────────────────
+    private static readonly Color Bg       = Color.FromArgb(0x14, 0x16, 0x1A);
+    private static readonly Color Panel    = Color.FromArgb(0x1E, 0x21, 0x26);
+    private static readonly Color PanelAlt = Color.FromArgb(0x26, 0x29, 0x2F);
+    private static readonly Color Fg       = Color.FromArgb(0xE8, 0xE8, 0xE8);
+    private static readonly Color Dim      = Color.FromArgb(0x9A, 0xA0, 0xA6);
+    private static readonly Color Accent   = Color.FromArgb(0x61, 0xAF, 0xEF);
+    private static readonly Color Good     = Color.FromArgb(0x98, 0xC3, 0x79);
+    private static readonly Color Warn     = Color.FromArgb(0xE5, 0xC0, 0x7B);
+    private static readonly Color Bad      = Color.FromArgb(0xE0, 0x6C, 0x75);
+    private static readonly Color ReqBlue  = Color.FromArgb(0x61, 0xAF, 0xEF);
+    private static readonly Color ExecOrg  = Color.FromArgb(0xD1, 0x9A, 0x66);
+
+    private AutoAssistConfig _config = null!;
+    private LiveContext? _ctx;
+    private readonly System.Windows.Forms.Timer _timer = new() { Interval = 15 };
+    private long _lastUiRefresh;
+
+    private bool _emergencyKeyWasDown;
+
+    // ── controls ────────────────────────────────────────────
+    private Label _lblMode = null!, _lblTarget = null!, _lblSubStatus = null!, _lblFlowStatus = null!, _lblCooldown = null!;
+    private Label _lblLastEvent = null!, _lblLastCounter = null!, _lblMetrics = null!, _lblPunishSafety = null!, _lblProvider = null!;
+    private Button _btnAutoTurning = null!, _btnSubPunish = null!, _btnCombat = null!, _btnFollow = null!, _btnStamina = null!;
+    private Label _lblCombat = null!, _lblFollow = null!, _lblStamina = null!;
+    private TextBox _txtCharacter = null!;
+    private CheckBox _allowSequence = null!;
+    private CheckBox _allowCombat = null!;
+    private RichTextBox _rtbLog = null!;
+    private DataGridView _playersGrid = null!;
+    private Label _playersStatus = null!;
+    private MapPlayersFrame? _shownPlayers;
+    private CheckBox _hideOwnVillage = null!;
+    private bool _shownHideOwnVillage;
+    private Button _btnCastTurn = null!;
+    private Label _lblCastTurn = null!;
+
+    public Form1(FirebaseSession session)
+    {
+        _session = session;
+        if (!session.Access.IsValid) throw new AccessDeniedException("Login obrigatório.");
+        _permissionsMask = PermissionsMask;
+        Text = "Nin Online AutoAssist — Turn / SubPunish / AA+Tool / Follow";
+        BackColor = Bg;
+        ForeColor = Fg;
+        Font = new Font("Segoe UI", 9F);
+        MinimumSize = new Size(1120, 780);
+        Size = new Size(1280, 850);
+        KeyPreview = true;
+        StartPosition = FormStartPosition.CenterScreen;
+
+        BuildUi();
+        LoadConfigAndContext();
+
+        _timer.Tick += OnTick;
+        _timer.Start();
+        KeyDown += OnKeyDown;
+        Shown += (_, _) => ConnectToGame();
+        FormClosed += (_, _) =>
+        {
+            _session.Revoke();
+            _timer.Stop(); _timer.Dispose();
+            if (_ctx is not null) { _ctx.MemoryLog.EntryLogged -= OnLogEntry; _ctx.Dispose(); }
+        };
+    }
+
+    // ═══════════════════════════════ UI construction ═══════════════════════════════
+
+    private void BuildUi()
+    {
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4,
+            BackColor = Bg, Padding = new Padding(10)
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));   // header
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));   // module toggles
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 380));  // observed state + module safety
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // log
+        Controls.Add(root);
+
+        // ── header ──
+        var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, BackColor = Bg };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
+        var title = new Label { Text = "NIN ONLINE AUTOASSIST", Font = new Font("Segoe UI Semibold", 17F, FontStyle.Bold), ForeColor = Fg, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
+        _lblMode = new Label { Text = "MODO: —", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI Semibold", 12F, FontStyle.Bold), BackColor = PanelAlt };
+        var btnStop = new Button { Text = "PARADA DE EMERGÊNCIA (F12)", Dock = DockStyle.Fill, BackColor = Bad, ForeColor = Color.Black, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold), Margin = new Padding(6, 4, 0, 4) };
+        btnStop.FlatAppearance.BorderSize = 0;
+        btnStop.Click += (_, _) => EmergencyStop();
+        header.Controls.Add(title, 0, 0); header.Controls.Add(_lblMode, 1, 0); header.Controls.Add(btnStop, 2, 0);
+        root.Controls.Add(header, 0, 0);
+
+        // ── module toggles ──
+        var modules = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 8, BackColor = Bg, Padding = new Padding(0, 6, 0, 6) };
+        for (var column = 0; column < 8; column++) modules.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 8));
+        _btnAutoTurning = MakeModuleButton("AUTO TURNING", false);
+        _btnAutoTurning.Click += (_, _) => ToggleAutoTurning();
+        _btnCastTurn = MakeModuleButton("AUTO CAST TURN", false);
+        _btnCastTurn.Click += (_, _) =>
+        {
+            var enabled = !(_btnCastTurn.Tag is true); _btnCastTurn.Tag = enabled;
+            _ctx?.SetCastTurnEnabled(enabled); RefreshModuleButtons();
+        };
+        var castMenu = new ContextMenuStrip();
+        castMenu.Items.Add("Ajustar janela final do cast…", null, (_, _) => ConfigureCastTurn());
+        _btnCastTurn.ContextMenuStrip = castMenu;
+        _btnSubPunish = MakeModuleButton("SUBPUNISH LEGADO", false);
+        _btnSubPunish.Click += (_, _) => ToggleSubPunish();
+        _btnCombat = MakeModuleButton("AA + TOOL", false);
+        _btnCombat.Click += (_, _) =>
+        {
+            var enabled = !(_btnCombat.Tag is true); _btnCombat.Tag = enabled;
+            _ctx?.SetCombatEnabled(enabled); RefreshModuleButtons();
+        };
+        _btnFollow = MakeModuleButton("AUTO FOLLOW", false);
+        _btnFollow.Click += (_, _) =>
+        {
+            var enabled = !(_btnFollow.Tag is true); _btnFollow.Tag = enabled;
+            _ctx?.SetFollowEnabled(enabled); RefreshModuleButtons();
+        };
+        _btnStamina = MakeModuleButton("AUTO STAMINA", false);
+        _btnStamina.Click += (_, _) =>
+        {
+            var enabled = !(_btnStamina.Tag is true); _btnStamina.Tag = enabled;
+            _ctx?.SetStaminaEnabled(enabled); RefreshModuleButtons();
+        };
+        var hint = new Button { Text = "CONSULTAR RECURSOS DO JOGO\nSomente leitura · sem automação", ForeColor = Fg, BackColor = PanelAlt, Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat };
+        _inspectionButton = hint;
+        hint.Click += (_, _) => { if (Allowed(AppFeature.ResourceInspection)) new ResourceInspectionForm(_session.Access).Show(this); };
+        _lblProvider = new Label { Text = "PROVEDOR: —", ForeColor = Dim, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(8, 0, 0, 0) };
+        modules.Controls.Add(_btnAutoTurning, 0, 0); modules.Controls.Add(_btnCastTurn, 1, 0); modules.Controls.Add(_btnSubPunish, 2, 0);
+        modules.Controls.Add(_btnCombat, 3, 0); modules.Controls.Add(_btnFollow, 4, 0);
+        modules.Controls.Add(_btnStamina, 5, 0);
+        modules.Controls.Add(hint, 6, 0); modules.Controls.Add(_lblProvider, 7, 0);
+        root.Controls.Add(modules, 0, 1);
+
+        // ── observed state + connection ──
+        var mid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, BackColor = Bg };
+        mid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
+        mid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
+        root.Controls.Add(mid, 0, 2);
+
+        var status = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, BackColor = Panel, Padding = new Padding(10) };
+        status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34));
+        status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 66));
+        _lblTarget      = AddStatusRow(status, 0, "STATUS DO ALVO");
+        _lblSubStatus   = AddStatusRow(status, 1, "BUFF SUB — MEMÓRIA");
+        _lblFlowStatus  = AddStatusRow(status, 2, "FLUXO SUBPUNISH");
+        _lblCooldown    = AddStatusRow(status, 3, "AUTORIZAÇÃO DO COMBO");
+        _lblLastEvent   = AddStatusRow(status, 4, "ÚLTIMO EVENTO");
+        _lblLastCounter = AddStatusRow(status, 5, "ÚLTIMA AÇÃO");
+        _lblMetrics     = AddStatusRow(status, 6, "TURN — TECLA / SUB");
+        _lblPunishSafety = AddStatusRow(status, 7, "PUNISH — SEM TECLA");
+        _lblCombat = AddStatusRow(status, 8, "AA MELEE / FAN + TOOL");
+        _lblFollow = AddStatusRow(status, 9, "FOLLOW — TECLA SEGURADA");
+        _lblStamina = AddStatusRow(status, 10, "STAMINA — LIMITES CONFIGURÁVEIS");
+        _lblCastTurn = AddStatusRow(status, 11, "AUTO CAST TURN — FINAL DO CAST");
+        mid.Controls.Add(status, 0, 0);
+
+        var rightPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 7, BackColor = Panel, Padding = new Padding(10) };
+        rightPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+        rightPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        rightPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        rightPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        rightPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+        rightPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
+        rightPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        rightPanel.Controls.Add(new Label { Text = "CONEXÃO AO VIVO — NOME DO PERSONAGEM", Dock = DockStyle.Fill, ForeColor = Dim, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+        _txtCharacter = new TextBox { Dock = DockStyle.Fill, BackColor = PanelAlt, ForeColor = Fg };
+        rightPanel.Controls.Add(_txtCharacter, 0, 1);
+        var connectionButtons = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        var connect = new Button { Text = "CONECTAR / RECONECTAR", AutoSize = true, BackColor = Accent, ForeColor = Color.Black, FlatStyle = FlatStyle.Flat };
+        connect.Click += (_, _) => ConnectToGame();
+        var disconnect = new Button { Text = "DESCONECTAR", AutoSize = true, BackColor = PanelAlt, ForeColor = Fg, FlatStyle = FlatStyle.Flat };
+        disconnect.Click += (_, _) => { DisconnectFromGame(); RefreshStatus(); };
+        var logout = new Button { Text = "SAIR DA CONTA", AutoSize = true };
+        logout.Click += (_, _) => { _session.Revoke(); EmergencyStop(); ReturnToLogin = true; Close(); };
+        _account = new Label { AutoSize = true, Text = _session.Email, ForeColor = Dim };
+        connectionButtons.AutoScroll = true;
+        connectionButtons.Controls.AddRange(new Control[] { connect, disconnect, logout, _account });
+        rightPanel.Controls.Add(connectionButtons, 0, 2);
+        _allowSequence = new CheckBox { Text = "AUTORIZAR A → Q → S por remoção antecipada (HEURÍSTICA)", Dock = DockStyle.Fill, ForeColor = Warn, Checked = false };
+        _allowSequence.CheckedChanged += (_, _) =>
+        {
+            _ctx?.SetCounterAttackAuthorized(_allowSequence.Checked);
+            RefreshStatus();
+        };
+        rightPanel.Controls.Add(_allowSequence, 0, 3);
+        _allowCombat = new CheckBox { Text = "AUTORIZAR AA + TOOL automáticos (sem tecla segurada)", Dock = DockStyle.Fill, ForeColor = Warn };
+        _allowCombat.CheckedChanged += (_, _) => { _ctx?.SetCombatAuthorized(_allowCombat.Checked); RefreshStatus(); };
+        rightPanel.Controls.Add(_allowCombat, 0, 4);
+        rightPanel.Controls.Add(new Label { Text = "SUB: giro automático durante buff/+1s; combo HEURÍSTICO.\nAA: Melee radial ou Fan/Hisuy frontal. TOOL: faixa frontal própria.\nFOLLOW: ON + tecla segurada + caminho conhecido. F12 desliga tudo.\nFeche o chat; acertos/cooldowns/armadilhas invisíveis não são garantidos.", Dock = DockStyle.Fill, ForeColor = Dim }, 0, 5);
+        var settings = new Button { Text = "TECLAS / TIMERS SUB", Width = 210, Height = 32, BackColor = PanelAlt, ForeColor = Fg };
+        settings.Click += (_, _) => ConfigureKeys();
+        var combatSettings = new Button { Text = "AA / TOOL / FOLLOW / STAMINA", Width = 240, Height = 32, BackColor = PanelAlt, ForeColor = Fg };
+        combatSettings.Click += (_, _) => ConfigureCombat();
+        var settingsButtons = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        settingsButtons.Controls.AddRange(new Control[] { settings, combatSettings });
+        rightPanel.Controls.Add(settingsButtons, 0, 6);
+        mid.Controls.Add(rightPanel, 1, 0);
+
+        // ── log ──
+        _rtbLog = new RichTextBox { Dock = DockStyle.Fill, BackColor = Color.FromArgb(0x0D, 0x0F, 0x13), ForeColor = Fg, ReadOnly = true, Font = new Font("Consolas", 9F), BorderStyle = BorderStyle.None, HideSelection = false };
+        var tabs = new TabControl { Dock = DockStyle.Fill };
+        var playersTab = new TabPage("PLAYERS NO MAPA") { BackColor = Panel };
+        var logTab = new TabPage("LOG") { BackColor = Panel };
+        logTab.Controls.Add(_rtbLog);
+        _playersGrid = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false,
+            AllowUserToDeleteRows = false, RowHeadersVisible = false, MultiSelect = false,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            BackgroundColor = Panel, ForeColor = Fg, EnableHeadersVisualStyles = false };
+        _playersGrid.DefaultCellStyle.BackColor = Panel;
+        _playersGrid.DefaultCellStyle.ForeColor = Fg;
+        _playersGrid.ColumnHeadersDefaultCellStyle.BackColor = PanelAlt;
+        _playersGrid.ColumnHeadersDefaultCellStyle.ForeColor = Fg;
+        foreach (var caption in new[] { "Slot", "Nome", "Vila", "Posição (tiles)", "Distância", "Você / Alvo", "Visibilidade", "Transformação" })
+            _playersGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = caption, SortMode = DataGridViewColumnSortMode.NotSortable });
+        _playersGrid.Columns[0].FillWeight = 35;
+        _playersGrid.Columns[1].FillWeight = 160;
+        _playersStatus = new Label { Dock = DockStyle.Top, Height = 44, ForeColor = Warn,
+            Text = "Aguardando lista local do mapa.\nVilas: Mist azul · Sand amarelo · Leaf verde · Renegado vermelho · Desconhecida neutro." };
+        _hideOwnVillage = new CheckBox { Text = "Ocultar minha vila — mostrar somente outras vilas", Dock = DockStyle.Top,
+            Height = 28, ForeColor = Fg, Checked = false };
+        _hideOwnVillage.CheckedChanged += (_, _) => RefreshPlayers();
+        playersTab.Controls.Add(_playersGrid); playersTab.Controls.Add(_playersStatus); playersTab.Controls.Add(_hideOwnVillage);
+        tabs.TabPages.Add(playersTab); tabs.TabPages.Add(logTab);
+        root.Controls.Add(tabs, 0, 3);
+    }
+
+    private void RefreshPlayers()
+    {
+        var list = _ctx?.MapPlayers;
+        var hideOwnVillage = _hideOwnVillage.Checked;
+        _playersStatus.Text = list is null
+            ? "Lista indisponível/antiga — aguardando leitura válida. " + (_ctx?.MapPlayersStatus ?? "Desconectado")
+            : hideOwnVillage && !PlayerVillages.IsKnown(list.LocalVillage)
+                ? "Filtro ativo: sua vila ainda é desconhecida; aguardando leitura válida.\nNenhum personagem será classificado como de outra vila sem essa informação."
+                : (_ctx?.MapPlayersStatus ?? "") + (hideOwnVillage
+                    ? $"\nOcultando {PlayerVillages.Label(list.LocalVillage)} e vilas desconhecidas. Filtro apenas visual; não altera automações."
+                    : "\nSem filtro de visibilidade/aparência. Estados de invisibilidade/transformação ainda não mapeados; não garante todos os jogadores do servidor.");
+        if (ReferenceEquals(list, _shownPlayers) && hideOwnVillage == _shownHideOwnVillage) return;
+        _shownPlayers = list;
+        _shownHideOwnVillage = hideOwnVillage;
+        if (list is null) { _playersGrid.Rows.Clear(); return; }
+        var visiblePlayers = list.ForDisplay(hideOwnVillage);
+        var player = _ctx?.Frame?.Snapshot.Player;
+        var sameSlots = _playersGrid.Rows.Count == visiblePlayers.Count && visiblePlayers.Select((p, i) =>
+            Equals(_playersGrid.Rows[i].Tag, p.Slot)).All(v => v);
+        if (!sameSlots) _playersGrid.Rows.Clear();
+        for (var i = 0; i < visiblePlayers.Count; i++)
+        {
+            var p = visiblePlayers[i];
+            var position = p.X is { } x && p.Y is { } y ? $"{x:0.0}, {y:0.0}" : "Desconhecida";
+            var distance = player is not null && p.X is { } px && p.Y is { } py
+                ? Math.Sqrt(Math.Pow(px - player.PositionX, 2) + Math.Pow(py - player.PositionY, 2)).ToString("0.0") : "?";
+            object[] values = { p.Slot, p.Name, PlayerVillages.Label(p.Village), position, distance,
+                p.IsLocal ? "VOCÊ" : p.IsSelected ? "ALVO" : "—", "Não mapeada", "Não mapeada" };
+            if (sameSlots) _playersGrid.Rows[i].SetValues(values);
+            else { var row = _playersGrid.Rows.Add(values); _playersGrid.Rows[row].Tag = p.Slot; }
+            var color = PlayerVillages.ColorArgb(p.Village) is { } argb ? Color.FromArgb(argb) : Fg;
+            foreach (var column in new[] { 1, 2 })
+            {
+                var style = _playersGrid.Rows[i].Cells[column].Style;
+                style.ForeColor = style.SelectionForeColor = color;
+                style.SelectionBackColor = PanelAlt;
+            }
+        }
+    }
+
+    private Control BuildLegend()
+    {
+        var legend = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(0, 4, 0, 0) };
+        legend.Controls.Add(new Label { Text = "PROVENIÊNCIA DOS EVENTOS", ForeColor = Dim, AutoSize = true, Font = new Font("Segoe UI Semibold", 8F, FontStyle.Bold), Margin = new Padding(0, 0, 0, 2) });
+        legend.Controls.Add(LegendItem("● OBSERVADO  — lido, não confirmado", Warn));
+        legend.Controls.Add(LegendItem("● CONFIRMADO — evidência suficiente", Good));
+        legend.Controls.Add(LegendItem("● SOLICITADO — pedido enviado", ReqBlue));
+        legend.Controls.Add(LegendItem("● EXECUTADO  — input disparado (acerto?)", ExecOrg));
+        return legend;
+    }
+
+    private static Label LegendItem(string text, Color color) =>
+        new() { Text = text, ForeColor = color, AutoSize = true, Font = new Font("Segoe UI", 8F), Margin = new Padding(0) };
+
+    private static Button MakeModuleButton(string title, bool on) => new()
+    {
+        Text = $"{title}\nOFF",
+        Dock = DockStyle.Fill,
+        Margin = new Padding(0, 0, 8, 0),
+        BackColor = PanelAlt,
+        ForeColor = Fg,
+        FlatStyle = FlatStyle.Flat,
+        Font = new Font("Segoe UI Semibold", 12F, FontStyle.Bold),
+        Tag = on
+    };
+
+    private Label AddStatusRow(TableLayoutPanel grid, int row, string caption)
+    {
+        if (grid.RowStyles.Count <= row) grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / 12f));
+        var cap = new Label { Text = caption, ForeColor = Dim, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI Semibold", 8F, FontStyle.Bold) };
+        var val = new Label { Text = "—", ForeColor = Fg, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
+        grid.Controls.Add(cap, 0, row);
+        grid.Controls.Add(val, 1, row);
+        return val;
+    }
+
+    // ═══════════════════════════════ config / context ═══════════════════════════════
+
+    private static string ConfigPath => AppPaths.Settings.ConfigPath;
+
+    private void LoadConfigAndContext()
+    {
+        AppPaths.Settings.EnsureConfig();
+        _config = ConfigLoader.Load(ConfigPath);
+        _txtCharacter.Text = _config.Live.CharacterName;
+        _allowSequence.Text = $"AUTORIZAR {string.Join(" → ", _config.Live.PunishKeys)} + GIRO SUB (buff/+1s)";
+        _allowSequence.Checked = false; // Offensive permission is explicit for each app session.
+        AppendLog(LogLevel.Info, "AO VIVO: módulos OFF. SubPunish autorizado gira automaticamente para o alvo durante buff/+1s. Fora da janela, Turn exige tecla. Combo sem alvo/tecla; remoção antecipada é HEURÍSTICA.", null);
+        RefreshModuleButtons();
+        RefreshModeBadge();
+        RefreshStatus();
+    }
+
+    private void RefreshModeBadge()
+    {
+        _lblMode.Text = _ctx?.Provider is null ? "AO VIVO · DESCONECTADO"
+            : _ctx.SubstitutionTurningActive ? "TURN: SUB AUTOMÁTICO (+1s)"
+            : $"TURN: {string.Join(" / ", _config.Live.TurnActivationKeys)}";
+        _lblMode.ForeColor = _ctx?.Frame is null ? Warn : Good;
+        _lblProvider.Text = _ctx?.Status ?? "Desconectado — leitura indisponível";
+        var connected = _ctx?.Provider is not null && _session.Access.IsValid;
+        _btnAutoTurning.Enabled = connected && Allowed(AppFeature.AutoTurning);
+        _btnSubPunish.Enabled = _allowSequence.Enabled = connected && Allowed(SubFeature);
+        _btnCombat.Enabled = _allowCombat.Enabled = connected && (Allowed(AppFeature.AutoAttack) || Allowed(AppFeature.Tool));
+        _btnFollow.Enabled = connected && Allowed(AppFeature.Follow);
+        _btnStamina.Enabled = connected && Allowed(AppFeature.Stamina);
+        _btnCastTurn.Enabled = connected && Allowed(AppFeature.AutoCastTurn) && _ctx?.Provider?.Profile.CastTiming is not null;
+        _inspectionButton.Enabled = Allowed(AppFeature.ResourceInspection);
+        _account.Text = $"{_session.Email} · {_session.Status}";
+    }
+
+    private void DisconnectFromGame()
+    {
+        if (_ctx is not null)
+        {
+            _ctx.SetAutoTurningEnabled(false);
+            _ctx.SetSubPunishEnabled(false);
+            _ctx.SetCombatEnabled(false); _ctx.SetCombatAuthorized(false); _ctx.SetFollowEnabled(false);
+            _ctx.SetStaminaEnabled(false);
+            _ctx.SetCastTurnEnabled(false);
+            _ctx.MemoryLog.EntryLogged -= OnLogEntry;
+            _ctx.Dispose();
+            _ctx = null;
+        }
+        _btnAutoTurning.Tag = _btnSubPunish.Tag = _btnCombat.Tag = _btnFollow.Tag = _btnStamina.Tag = false;
+        _btnCastTurn.Tag = false;
+        RefreshModuleButtons();
+        RefreshModeBadge();
+    }
+
+    private void ConnectToGame()
+    {
+        if (!_session.Access.IsValid) return;
+        if (string.IsNullOrWhiteSpace(_txtCharacter.Text))
+        {
+            AppendLog(LogLevel.Warning, "Informe o nome exato do personagem para conectar.", null);
+            return;
+        }
+        DisconnectFromGame();
+        _config = _config with { Live = _config.Live with { CharacterName = _txtCharacter.Text.Trim(),
+            AllowCounterAttackSequence = _allowSequence.Checked } };
+        _ctx = new LiveContext(_config, _session.Access);
+        _ctx.SetCombatAuthorized(_allowCombat.Checked);
+        _ctx.MemoryLog.EntryLogged += OnLogEntry;
+        foreach (var entry in _ctx.MemoryLog.Snapshot()) OnLogEntry(entry);
+        RefreshModeBadge();
+        RefreshStatus();
+    }
+
+    private void ConfigureKeys()
+    {
+        // Editing always disarms first; closing/cancelling never resumes an old trigger.
+        EmergencyStop();
+        using var dialog = new KeySettingsForm(_config.Live);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        var updated = _config with { Live = dialog.Settings };
+        try { ConfigLoader.Save(ConfigPath, updated); }
+        catch (Exception ex) { AppendLog(LogLevel.Error, $"Não foi possível salvar: {ex.Message}", null); return; }
+        _config = updated;
+        _allowSequence.Text = $"AUTORIZAR {string.Join(" → ", updated.Live.PunishKeys)} + GIRO SUB (buff/+1s)";
+        ConnectToGame();
+        AppendLog(LogLevel.Info, "Teclas salvas/aplicadas; módulos OFF e autorização revogada.", EventOrigin.Requested);
+    }
+
+    private void ConfigureCombat()
+    {
+        EmergencyStop();
+        using var dialog = new CombatAssistForm(_config.CombatAssist);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        var updated = _config with { CombatAssist = dialog.Settings,
+            Live = _config.Live with { AllowCounterAttackSequence = false } };
+        try { ConfigLoader.Save(ConfigPath, updated); }
+        catch (Exception ex) { AppendLog(LogLevel.Error, $"Não foi possível salvar: {ex.Message}", null); return; }
+        _config = updated; ConnectToGame();
+        AppendLog(LogLevel.Info, "AA/Tool/Follow salvos; módulos OFF e permissões revogadas.", EventOrigin.Requested);
+    }
+
+    private void ConfigureCastTurn()
+    {
+        EmergencyStop();
+        using var dialog = new AutoCastTurnForm(_config.AutoCastTurn);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        var updated = _config with { AutoCastTurn = dialog.Settings };
+        try { ConfigLoader.Save(ConfigPath, updated); }
+        catch (Exception ex) { AppendLog(LogLevel.Error, $"Não foi possível salvar: {ex.Message}", null); return; }
+        _config = updated; ConnectToGame();
+    }
+
+    // ═══════════════════════════════ toggles & stop ═══════════════════════════════
+
+    private void ToggleAutoTurning()
+    {
+        bool on = !(_btnAutoTurning.Tag is bool b && b);
+        _btnAutoTurning.Tag = on;
+        _ctx?.SetAutoTurningEnabled(on);
+        AppendLog(LogLevel.Info, $"Auto Turning {(on ? "ATIVADO" : "DESATIVADO")} pelo usuário", EventOrigin.Requested);
+        RefreshModuleButtons();
+    }
+
+    private void ToggleSubPunish()
+    {
+        bool on = !(_btnSubPunish.Tag is bool b && b);
+        _btnSubPunish.Tag = on;
+        _ctx?.SetSubPunishEnabled(on);
+        AppendLog(LogLevel.Info, $"SubPunish {(on ? "ATIVADO" : "DESATIVADO")} pelo usuário", EventOrigin.Requested);
+        RefreshModuleButtons();
+    }
+
+    private void RefreshModuleButtons()
+    {
+        RefreshModuleButton(_btnAutoTurning, "AUTO TURNING");
+        RefreshModuleButton(_btnCastTurn, "AUTO CAST TURN");
+        RefreshModuleButton(_btnSubPunish, _config.Live.PunishMode == LivePunishMode.AnchoredExperimental ? "SUBPUNISH NOVO\nEXPERIMENTAL" : "SUBPUNISH LEGADO");
+        RefreshModuleButton(_btnCombat, Allowed(AppFeature.AutoAttack) && Allowed(AppFeature.Tool) ? "AA + TOOL"
+            : Allowed(AppFeature.AutoAttack) ? "AA (TOOL BLOQUEADO)" : Allowed(AppFeature.Tool) ? "TOOL (AA BLOQUEADO)" : "AA / TOOL BLOQUEADOS");
+        RefreshModuleButton(_btnFollow, "AUTO FOLLOW");
+        RefreshModuleButton(_btnStamina, "AUTO STAMINA");
+    }
+
+    private static void RefreshModuleButton(Button btn, string title)
+    {
+        bool on = btn.Tag is bool b && b;
+        btn.Text = $"{title}\n{(on ? "ON" : "OFF")}";
+        btn.BackColor = on ? Color.FromArgb(0x24, 0x3A, 0x2A) : PanelAlt;
+        btn.ForeColor = on ? Good : Fg;
+    }
+
+    private void EmergencyStop()
+    {
+        _ctx?.SetAutoTurningEnabled(false);
+        _ctx?.SetSubPunishEnabled(false);
+        _ctx?.SetCombatEnabled(false); _ctx?.SetCombatAuthorized(false); _ctx?.SetFollowEnabled(false);
+        _ctx?.SetStaminaEnabled(false);
+        _ctx?.SetCastTurnEnabled(false);
+        _btnAutoTurning.Tag = false;
+        _btnSubPunish.Tag = false;
+        _btnCombat.Tag = _btnFollow.Tag = _btnStamina.Tag = false;
+        _btnCastTurn.Tag = false;
+        _allowSequence.Checked = false;
+        _allowCombat.Checked = false;
+        LiveInputController.AcknowledgeEmergencyAfterDisarm();
+        RefreshModuleButtons();
+        AppendLog(LogLevel.Warning, "PARADA DE EMERGÊNCIA acionada — módulos desativados", EventOrigin.Requested);
+        System.Media.SystemSounds.Exclamation.Play();
+    }
+
+    private void OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        var key = _config.General.EmergencyStopKey;
+        if (e.KeyCode.ToString().Equals(key, StringComparison.OrdinalIgnoreCase))
+        {
+            e.Handled = true;
+            EmergencyStop();
+        }
+    }
+
+    private void OnTick(object? sender, EventArgs e)
+    {
+        var down = LiveInputController.IsDown((int)Keys.F12);
+        var pressed = LiveInputController.ConsumeEmergency();
+        if ((pressed && !down) || (down && !_emergencyKeyWasDown)) EmergencyStop();
+        _emergencyKeyWasDown = down;
+        if (Environment.TickCount64 - _lastUiRefresh < 100) return;
+        _lastUiRefresh = Environment.TickCount64;
+        if (!_session.Access.IsValid)
+        {
+            _timer.Stop(); // MessageBox has its own message loop: do not re-enter this expiry branch.
+            _session.Revoke(); EmergencyStop();
+            foreach (var child in OwnedForms) child.Close();
+            ReturnToLogin = true;
+            MessageBox.Show(this, "A sessão perdeu a autorização ou a conexão. Entre novamente para continuar.", "Sessão encerrada");
+            Close(); return;
+        }
+        var mask = PermissionsMask;
+        if (mask != _permissionsMask)
+        {
+            _permissionsMask = mask; EmergencyStop();
+            if (!Allowed(AppFeature.ResourceInspection)) foreach (var child in OwnedForms.OfType<ResourceInspectionForm>()) child.Close();
+            AppendLog(LogLevel.Warning, "Permissões atualizadas pelo administrador; módulos desarmados.", null);
+        }
+        if (_ctx?.Frame is { } observed) _session.ObserveCharacter(observed.PlayerName);
+        RefreshModeBadge();
+        RefreshStatus();
+    }
+
+    // ═══════════════════════════════ status & log ═══════════════════════════════
+
+    private void RefreshStatus()
+    {
+        var snap = _ctx?.Snapshot();
+        _lblTarget.Text = snap?.Target is { } target
+            ? $"{target.Id} @ ({target.PositionX:F1}, {target.PositionY:F1}) {(target.IsAlive ? "vivo" : "morto / HP indisponível")}"
+            : snap is null ? "Sem amostra recente" : "Nenhum alvo jogador válido — leitura do buff continua";
+        _lblTarget.ForeColor = snap?.Target is { IsAlive: true } ? Fg : Dim;
+
+        var observation = _ctx?.BuffObservation ?? LiveBuffObservation.FromFrame(null, 0);
+        _lblSubStatus.Text = observation.Presence switch
+        {
+            BuffPresence.Active => string.Join(" | ", observation.ActiveSubs.Select(b =>
+                $"{SubstitutionBuffs.Label(b.Name)}: {b.RemainingSeconds?.ToString() ?? "?"}s")),
+            BuffPresence.Inactive => "INATIVA — ausente no array de buffs desta amostra",
+            _ => "DESCONHECIDA — sem leitura recente, não equivale a inativa"
+        };
+        _lblSubStatus.ForeColor = observation.Presence switch { BuffPresence.Active => Good, BuffPresence.Unknown => Warn, _ => Dim };
+        if (_ctx?.Punish is { } punish)
+        {
+            _lblFlowStatus.Text = !(_btnSubPunish.Tag is true) ? "Módulo OFF — observação do buff permanece ativa"
+                : punish.Status;
+            _lblFlowStatus.ForeColor = punish.State switch
+            {
+                EarlyPunishState.WatchingBuff => Good, EarlyPunishState.Executing => ExecOrg,
+                EarlyPunishState.RemovalPending or EarlyPunishState.Cancelled => Warn, _ => Dim
+            };
+        }
+        else _lblFlowStatus.Text = "Desconectado";
+        var sequence = string.Join(" → ", _config.Live.PunishKeys);
+        _lblCooldown.Text = _ctx?.CounterAttackAuthorized == true ? $"{sequence} + GIRO SUB autorizados; combo sem alvo"
+            : $"DESAUTORIZADO — {sequence}";
+        _lblCooldown.ForeColor = _ctx?.CounterAttackAuthorized == true ? Good : Warn;
+        var entries = _ctx?.MemoryLog.Snapshot();
+        _lblLastEvent.Text = entries is { Count: > 0 } ? $"{entries[^1].At:HH:mm:ss} {Truncate(entries[^1].Message, 90)}" : "—";
+        _lblLastCounter.Text = _ctx?.ActionStatus ?? "Nenhuma tecla ofensiva enviada";
+        _lblMetrics.Text = _ctx?.TurningSafetyStatus ?? "Desconectado";
+        _lblPunishSafety.Text = _ctx?.PunishSafetyStatus ?? "Desconectado";
+        _lblCombat.Text = _ctx?.CombatStatus ?? "Desconectado";
+        _lblFollow.Text = _ctx?.FollowStatus ?? "Desconectado";
+        _lblStamina.Text = _ctx?.StaminaStatus ?? "Desconectado";
+        _lblCastTurn.Text = !Allowed(AppFeature.AutoCastTurn) ? "Recurso não autorizado pelo Firebase (AutoCastTurn)"
+            : _ctx?.Provider is { Profile.CastTiming: null } ? "Cast não calibrado para este perfil do jogo"
+            : _ctx?.CastTurnStatus ?? "Desconectado";
+        RefreshPlayers();
+    }
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";
+
+    private void OnLogEntry(LogEntry entry)
+    {
+        if (IsDisposed || Disposing) return;
+        if (InvokeRequired)
+        {
+            try { BeginInvoke(() => OnLogEntry(entry)); }
+            catch (InvalidOperationException) when (IsDisposed || Disposing || !IsHandleCreated) { }
+            return;
+        }
+        AppendLog(entry.Level, entry.Message, entry.Origin);
+    }
+
+    private void AppendLog(LogLevel level, string message, EventOrigin? origin)
+    {
+        var color = origin switch
+        {
+            EventOrigin.Simulated => Dim,
+            EventOrigin.Observed => Warn,
+            EventOrigin.Confirmed => Good,
+            EventOrigin.Requested => ReqBlue,
+            EventOrigin.Executed => ExecOrg,
+            _ => level switch
+            {
+                LogLevel.Error => Bad,
+                LogLevel.Warning => Warn,
+                LogLevel.Debug => Dim,
+                _ => Fg
+            }
+        };
+        var originTag = origin?.ToString().ToUpperInvariant() ?? level.ToString().ToUpperInvariant();
+        _rtbLog.SelectionStart = _rtbLog.TextLength;
+        _rtbLog.SelectionLength = 0;
+        _rtbLog.SelectionColor = color;
+        _rtbLog.AppendText($"{DateTime.Now:HH:mm:ss} [{originTag,-10}] {message}{Environment.NewLine}");
+        _rtbLog.SelectionColor = Fg;
+        _rtbLog.ScrollToCaret();
+    }
+}

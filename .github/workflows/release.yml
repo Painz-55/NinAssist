@@ -1,0 +1,62 @@
+name: Automatic updater release
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Nova versão estável (ex.: 1.1.0)'
+        required: true
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      FEED_URL: ${{ vars.UPDATES_REPOSITORY }}
+      RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Validate public release destination
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN || github.token }}
+        run: |
+          if ($env:FEED_URL -notmatch '^https://github\.com/([A-Za-z0-9-]+)/([A-Za-z0-9_.-]+)/?$') { throw 'Configure a variável UPDATES_REPOSITORY: URL do repositório PÚBLICO de releases.' }
+          $repo = "$($Matches[1])/$($Matches[2])"
+          $private = gh api "repos/$repo" --jq '.private'
+          if ($LASTEXITCODE -ne 0 -or $private -ne 'false') { throw 'O feed precisa ser público. Não colocar tokens no aplicativo.' }
+          $version = $env:RELEASE_VERSION -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Versão inválida.' }
+          gh release view "v$version" --repo $repo *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'Essa versão já foi publicada. Use uma versão nova, sem substituir pacotes existentes.' }
+          $global:LASTEXITCODE = 0 # A missing release is expected; do not fail the PowerShell step on this lookup.
+          "RELEASE_REPO=$repo" >> $env:GITHUB_ENV
+          "PACK_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Build installer and update packages
+        shell: pwsh
+        env:
+          FIREBASE_PUBLIC_CONFIG: ${{ secrets.FIREBASE_PUBLIC_CONFIG_JSON }}
+        run: |
+          if (-not $env:FIREBASE_PUBLIC_CONFIG) { throw 'Configure FIREBASE_PUBLIC_CONFIG_JSON com a configuração web pública, nunca uma conta de serviço.' }
+          $configPath = Join-Path $env:RUNNER_TEMP 'firebase-public-config.json'
+          $env:FIREBASE_PUBLIC_CONFIG | Set-Content -Encoding utf8 $configPath
+          ./scripts/Build-Release.ps1 -Version $env:PACK_VERSION -RepositoryUrl $env:FEED_URL -FirebaseConfigPath $configPath
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-and-updates
+          path: artifacts/*/releases/*
+      - name: Publish stable release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN || github.token }}
+        run: |
+          $assets = @(Get-ChildItem "artifacts/$env:PACK_VERSION/releases" -File | ForEach-Object FullName)
+          if ($assets.Count -eq 0) { throw 'Nenhum asset gerado.' }
+          gh release create "v$env:PACK_VERSION" @assets --repo $env:RELEASE_REPO --title "Nin Online AutoAssist $env:PACK_VERSION" --notes "Atualização automática $env:PACK_VERSION. Instalação inicial: use o Setup.exe."
+          if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar a release.' }

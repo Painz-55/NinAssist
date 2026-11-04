@@ -1,0 +1,37 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Velopack" Version="1.2.161" />
+    <ProjectReference Include="..\NinOnlineAutoAssist.Core\NinOnlineAutoAssist.Core.csproj" />
+    <ProjectReference Include="..\NinOnlineAutoAssist.Diagnostics\NinOnlineAutoAssist.Diagnostics.csproj" />
+    <ProjectReference Include="..\NinOnlineAutoAssist.Live\NinOnlineAutoAssist.Live.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\firebase.config.json" Condition="Exists('..\..\firebase.config.json')" Link="firebase.config.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\firebase.config.example.json" Condition="!Exists('..\..\firebase.config.json')" Link="firebase.config.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\updates.config.json" Condition="Exists('..\..\updates.config.json')" Link="updates.config.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\updates.config.example.json" Condition="!Exists('..\..\updates.config.json')" Link="updates.config.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="CopyGameplayDefaultsIfMissing" AfterTargets="Build">
+    <Copy SourceFiles="..\..\ninautoassist.config.example.json" DestinationFiles="$(TargetDir)ninautoassist.config.json" Condition="!Exists('$(TargetDir)ninautoassist.config.json')" />
+  </Target>
+  <Target Name="PublishGameplayDefaults" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(MSBuildProjectDirectory)\..\..\ninautoassist.config.example.json">
+        <RelativePath>ninautoassist.config.json</RelativePath>
+        <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
+</Project>
