@@ -21,6 +21,28 @@ if (args.Length == 2 && args[0] == "--replay-sub-anchors") return SubAnchorRepla
 if (args.Length == 4 && args[0] == "--sub-anchor-trace" && int.TryParse(args[1], out var anchorPid) && int.TryParse(args[3], out var anchorSeconds))
     return SubAnchorTrace.Run(anchorPid, args[2], anchorSeconds);
 if (args.Length == 2 && args[0] == "--build-schema" && int.TryParse(args[1], out var schemaPid)) return BuildSchemaProbe.Run(schemaPid);
+if (args.Length == 2 && args[0] == "--profile-candidates" && int.TryParse(args[1], out var candidatePid))
+    return ProfileCandidateProbe.Run(candidatePid);
+if (args.Length == 4 && args[0] == "--signed-profile-snapshot" && int.TryParse(args[1], out var signedPid))
+{
+    using var process = System.Diagnostics.Process.GetProcessById(signedPid);
+    var directory = Path.GetDirectoryName(process.MainModule!.FileName)!;
+    static string Hash(string path) { using var stream = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(stream)); }
+    var json = File.ReadAllBytes(args[3]);
+    var sig = Convert.FromBase64String(File.ReadAllText(args[3] + ".sig").Trim());
+    var profile = SignedProfileCatalog.VerifyAndSelect(json, sig, SignedProfileCatalog.PublicKey,
+        Hash(Path.Combine(directory, "NinOnline.dll")), Hash(Path.Combine(directory, "Common.dll")))
+        ?? throw new InvalidOperationException("No signed profile for this exact game build");
+    // A diagnostic never dispatches input, even when the signed app profile allows a subset of actions.
+    profile = profile with { ActuationValidated = false, ValidatedInputKinds = [] };
+    using var provider = new ReadOnlyGameStateProvider(signedPid, args[2] == "--auto" ? "" : args[2],
+        new SystemMonotonicClock(), profile) { ReadNavigation = true, ReadMapPlayers = true };
+    for (var i = 0; i < 6; i++) { provider.GetSnapshot(); Thread.Sleep(100); }
+    Console.WriteLine(JsonSerializer.Serialize(new { provider.Status, provider.Frame, provider.NavigationStatus,
+        Navigation = provider.Navigation is null ? null : new { provider.Navigation.Map, provider.Navigation.Width, provider.Navigation.Height },
+        provider.MapPlayersStatus, MapPlayers = provider.MapPlayers?.Players.Count }));
+    return provider.Frame is null ? 1 : 0;
+}
 if (args.Length == 2 && args[0] == "--field-metadata") return FieldMetadata.Run(args[1]);
 if (args.Length == 2 && args[0] == "--common-enums") return FieldMetadata.Run(args[1], enums: true);
 if (args.Length == 1 && args[0] == "--hold-timing")

@@ -1,6 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <Content Include="..\..\compatibility\profiles.json" Link="compatibility\profiles.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\compatibility\profiles.json.sig" Link="compatibility\profiles.json.sig" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="Velopack" Version="1.2.161" />
     <ProjectReference Include="..\NinOnlineAutoAssist.Core\NinOnlineAutoAssist.Core.csproj" />
     <ProjectReference Include="..\NinOnlineAutoAssist.Diagnostics\NinOnlineAutoAssist.Diagnostics.csproj" />

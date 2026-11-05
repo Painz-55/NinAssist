@@ -1,5 +1,13 @@
 # Alterações
 
+## 1.1.4
+
+- Canal de perfis de compatibilidade assinado, separado do instalador. Novo par de DLLs só é aceito por perfil completo e assinado; sem perfil ou com erro de rede/assinatura continua bloqueado.
+- Perfis externos são lidos em três amostras consistentes antes de publicar snapshots; perfis não aprovados nunca enviam teclas.
+- Diagnóstico passivo de candidatos estruturais para acelerar a calibração de builds ofuscadas; candidatos não são considerados evidência suficiente para automação.
+- Assinador separado com chave privada fora do repositório e confirmação explícita para permitir ações.
+- Perfil Steam da atualização seguinte validado em leitura passiva e em teste ativo controlado com alvo seguro e F12. Os sete tipos de input foram aprovados para esta build, sem inferir acerto/efeito do servidor. Builds locais 1.1.2/1.1.3 permanecem arquivadas.
+
 ## 1.1.1
 
 - Compatibilidade com o par de assemblies do Nin Online atualizado em 2026-11-04, observado com os mesmos hashes nas instalações Steam e standalone.

@@ -23,6 +23,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="..\..\compatibility\profiles.json" Link="compatibility\profiles.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\compatibility\profiles.json.sig" Link="compatibility\profiles.json.sig" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\NinOnlineAutoAssist.Core\NinOnlineAutoAssist.Core.csproj" />
     <ProjectReference Include="..\..\src\NinOnlineAutoAssist.Simulation\NinOnlineAutoAssist.Simulation.csproj" />
     <ProjectReference Include="..\..\src\NinOnlineAutoAssist.Diagnostics\NinOnlineAutoAssist.Diagnostics.csproj" />

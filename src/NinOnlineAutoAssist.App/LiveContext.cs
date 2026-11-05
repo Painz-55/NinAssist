@@ -104,6 +104,8 @@ public sealed class LiveContext : IDisposable
             finally { foreach (var process in processes) process.Dispose(); }
             Provider = new ReadOnlyGameStateProvider(pid, detectCharacterAutomatically ? "" : config.Live.CharacterName, _clock);
             Log.Log(LogLevel.Info, $"Perfil detectado: {Provider.Profile.Id}; instalação: {Provider.GameDirectory}; hashes do par verificados");
+            if (!Provider.Profile.ActuationValidated)
+                Log.Log(LogLevel.Warning, "Perfil externo apenas para leitura: automação bloqueada até validação passiva e assinatura de um perfil aprovado.");
             LiveKeySettings.Validate(config.Live.PunishKeys, config.Live.TurnActivationKeys);
             _input = new LiveInputController(CanDispatch, Log, Provider.GameDirectory,
                 config.Live.PunishKeys, config.Live.TurnActivationKeys, PrepareComboFacing, config.CombatAssist);
@@ -327,6 +329,10 @@ public sealed class LiveContext : IDisposable
 
     private SafetyDecision CheckSafety(LiveInputKind kind)
     {
+        if (Provider?.Profile.ActuationValidated != true)
+            return new(false, "Perfil de jogo não aprovado para enviar teclas");
+        if (Provider.Profile.ExternalProfile && !Provider.Profile.ValidatedInputKinds.Contains(kind.ToString(), StringComparer.Ordinal))
+            return new(false, $"{kind}: sinal ainda não validado para esta build");
         var feature = kind switch
         {
             LiveInputKind.Attack => AppFeature.AutoAttack, LiveInputKind.Tool => AppFeature.Tool,

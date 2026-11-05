@@ -19,6 +19,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NinOnlineAutoAssist.Diagnos
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NinOnlineAutoAssist.Live", "src\NinOnlineAutoAssist.Live\NinOnlineAutoAssist.Live.csproj", "{1BF4ADF8-7295-46BC-95E2-8B005295CE75}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NinOnlineAutoAssist.ProfileSigner", "src\NinOnlineAutoAssist.ProfileSigner\NinOnlineAutoAssist.ProfileSigner.csproj", "{3853B6C0-A8A3-4B51-BDE6-65679D03E6B8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -52,6 +54,10 @@ Global
 		{1BF4ADF8-7295-46BC-95E2-8B005295CE75}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1BF4ADF8-7295-46BC-95E2-8B005295CE75}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1BF4ADF8-7295-46BC-95E2-8B005295CE75}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3853B6C0-A8A3-4B51-BDE6-65679D03E6B8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3853B6C0-A8A3-4B51-BDE6-65679D03E6B8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3853B6C0-A8A3-4B51-BDE6-65679D03E6B8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3853B6C0-A8A3-4B51-BDE6-65679D03E6B8}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{E5F59442-630D-4C8E-ADB6-CDD0E3F3B884} = {D38D229B-A697-4D81-8E3B-EEADC897B8C1}
@@ -60,5 +66,6 @@ Global
 		{B59D24B2-0BA9-445D-AA6D-E6E4CC808CB8} = {8C2A769E-421B-4CA5-A7A2-902DAF4D3D69}
 		{04CBF41A-ED0F-463F-AD3D-4FD1A3FD9DCD} = {D38D229B-A697-4D81-8E3B-EEADC897B8C1}
 		{1BF4ADF8-7295-46BC-95E2-8B005295CE75} = {D38D229B-A697-4D81-8E3B-EEADC897B8C1}
+		{3853B6C0-A8A3-4B51-BDE6-65679D03E6B8} = {D38D229B-A697-4D81-8E3B-EEADC897B8C1}
 	EndGlobalSection
 EndGlobal

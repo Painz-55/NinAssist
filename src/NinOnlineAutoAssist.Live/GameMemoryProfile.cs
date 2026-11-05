@@ -6,6 +6,9 @@ public sealed record GameMemoryProfile
     public required string Id { get; init; }
     public required string Sha256 { get; init; }
     public required string CommonSha256 { get; init; }
+    public bool ExternalProfile { get; init; }
+    public bool ActuationValidated { get; init; } = true;
+    public string[] ValidatedInputKinds { get; init; } = [];
     public string Roots { get; init; } = LiveMemoryProfile.Roots;
     public string Globals { get; init; } = LiveMemoryProfile.Globals;
     public string Players { get; init; } = LiveMemoryProfile.Players;

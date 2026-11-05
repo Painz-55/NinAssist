@@ -30,6 +30,8 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
     private readonly LocalCharacterIdentity _identity;
     public string? DetectedCharacterName => _identity.Name;
     private ulong _globalsMethodTable, _rootsMethodTable;
+    private int _externalSampleCount, _externalSampleMap;
+    private string? _externalSampleName;
     public int ProcessId => _process.Id;
     public string GameDirectory { get; }
     public GameMemoryProfile Profile { get; }
@@ -43,7 +45,7 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
     public string Status { get; private set; } = "Connecting";
     public bool IsLiveData => Frame is { } f && _clock.NowMs - f.CapturedAtMs <= 500;
 
-    public ReadOnlyGameStateProvider(int pid, string expectedName, IMonotonicClock clock)
+    public ReadOnlyGameStateProvider(int pid, string expectedName, IMonotonicClock clock, GameMemoryProfile? calibrationProfile = null)
     {
         _identity = new LocalCharacterIdentity(expectedName);
         _clock = clock;
@@ -57,7 +59,25 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
             string gameHash, commonHash;
             using (var file = File.OpenRead(assembly)) gameHash = Convert.ToHexString(SHA256.HashData(file));
             using (var file = File.OpenRead(Path.Combine(GameDirectory, "Common.dll"))) commonHash = Convert.ToHexString(SHA256.HashData(file));
-            Profile = GameMemoryProfile.Select(gameHash, commonHash);
+            if (calibrationProfile is not null)
+            {
+                if (calibrationProfile.ActuationValidated || !calibrationProfile.ExternalProfile ||
+                    !calibrationProfile.Sha256.Equals(gameHash, StringComparison.OrdinalIgnoreCase) ||
+                    !calibrationProfile.CommonSha256.Equals(commonHash, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Read-only calibration profile must match both DLL hashes and disable all input");
+                Profile = calibrationProfile;
+            }
+            else try { Profile = GameMemoryProfile.Select(gameHash, commonHash); }
+            catch (InvalidOperationException)
+            {
+                try { Profile = SignedProfileCatalog.Fetch(gameHash, commonHash)
+                    ?? throw new InvalidOperationException("No signed profile for this exact game build"); }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException($"Unknown game build ({gameHash[..12]}/{commonHash[..12]}). " +
+                        "No verified compatibility profile available; automation remains OFF.", ex);
+                }
+            }
             _target = DataTarget.AttachToProcess(pid, suspend: false);
             try { _runtime = _target.ClrVersions.Single().CreateRuntime(); }
             catch { _target.Dispose(); throw; }
@@ -256,11 +276,25 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
                 elapsed) { ObservedActiveBuffs = observedBuffs, Stamina = stamina, Cast = cast,
                     UnmappedSignals = cast is null ? new[] { "Casting", "ActionBlock", "SubstitutionCooldownRemaining", "Threat", "AttackerIdentity", "QSCostCooldownAndEffect" }
                         : new[] { "ActionBlock", "SubstitutionCooldownRemaining", "Threat", "AttackerIdentity", "QSCostCooldownAndEffect" } };
+            if (Profile.ExternalProfile)
+            {
+                _externalSampleCount = _externalSampleMap == map && _externalSampleName == name
+                    ? Math.Min(_externalSampleCount + 1, 3) : 1;
+                _externalSampleMap = map;
+                _externalSampleName = name;
+                if (_externalSampleCount < 3)
+                {
+                    Frame = null;
+                    Status = $"Perfil externo: validando leituras estáveis ({_externalSampleCount}/3); sem teclas";
+                    return null;
+                }
+            }
             Status = $"OBSERVED [{Profile.Id}] {name} → {targetName ?? "no target"} · {elapsed} ms";
             return snapshot;
         }
         catch (Exception ex)
         {
+            _externalSampleCount = 0;
             MapPlayers = null;
             Status = $"UNAVAILABLE: {ex.Message}";
             return null;
