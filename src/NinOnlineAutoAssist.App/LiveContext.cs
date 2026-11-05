@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using NinOnlineAutoAssist.Core;
 using NinOnlineAutoAssist.Core.Abstractions;
 using NinOnlineAutoAssist.Core.AutoTurning;
 using NinOnlineAutoAssist.Core.Config;
@@ -37,6 +38,10 @@ public sealed class LiveContext : IDisposable
     private LiveInputController? _input;
     private ComboFacingCoordinator? _comboFacing;
     private bool _preparingComboTurn;
+    private bool _preparingFanTurn;
+    private Direction _fanTurnDesired;
+    private long? _fanTurnAt;
+    private string? _fanTurnTarget;
     private Task? _reader;
     private LiveFrame? _frame, _dispatchFrame;
     private NavigationFrame? _navigation;
@@ -140,7 +145,7 @@ public sealed class LiveContext : IDisposable
                 SequenceTimeoutMs = config.Live.PunishSequenceTimeoutMs
             }, Log);
             Log.Log(LogLevel.Info, $"Modo escolhido: {LivePunishFactory.Name(config.Live.PunishMode)}; motores mutuamente exclusivos; início OFF");
-            Combat = new AutoAttackToolEngine(_clock, config.CombatAssist, DispatchCombat);
+            Combat = new AutoAttackToolEngine(_clock, config.CombatAssist, DispatchCombat, PrepareFanAttack);
             Follow = new AutoFollowEngine(_clock, config.CombatAssist, DispatchFollow, () => _input.ReleaseFollow());
             _input.RefreshFollowDuringTap = UpdateFollow;
             Stamina = new AutoStaminaEngine(_clock, desired =>
@@ -269,7 +274,7 @@ public sealed class LiveContext : IDisposable
         lock (_automationLock)
         {
             if (_disposed) return;
-            Combat?.Reset(); _combatEnabled = enabled;
+            Combat?.Reset(); _fanTurnAt = null; _fanTurnTarget = null; _combatEnabled = enabled;
             Log.Log(LogLevel.Info, $"AA/Tool {(enabled ? "ON" : "OFF")}; automático com autorização, alcances/intervalos configurados", EventOrigin.Requested);
         }
         _automation?.Wake();
@@ -282,7 +287,7 @@ public sealed class LiveContext : IDisposable
         lock (_automationLock)
         {
             if (_disposed) return;
-            Combat?.Reset(); _combatAuthorized = authorized;
+            Combat?.Reset(); _fanTurnAt = null; _fanTurnTarget = null; _combatAuthorized = authorized;
             Log.Log(LogLevel.Info, $"AA/Tool {(authorized ? "AUTORIZADO" : "DESAUTORIZADO")}", EventOrigin.Requested);
         }
         _automation?.Wake();
@@ -370,6 +375,13 @@ public sealed class LiveContext : IDisposable
         }
         if (kind == LiveInputKind.Turning)
         {
+            if (_preparingFanTurn)
+            {
+                if (Provider?.Profile.ValidatedInputKinds.Contains(nameof(LiveInputKind.Attack), StringComparer.Ordinal) != true ||
+                    !_access.Allows(AppFeature.AutoAttack)) return new(false, "Giro Fan sem aprovação de Attack");
+                return LiveSafetyGate.CheckTargetedModule(frame, now, _combatEnabled, _combatAuthorized,
+                    foreground, emergency, text);
+            }
             var subTurn = LiveSafetyGate.CheckSubstitutionTurning(frame, now, _subEnabled && _access.Allows(SubFeature), CounterAttackAuthorized,
                 _subTurnWindow.IsOpen(frame, now), foreground, emergency, false, text);
             if (subTurn.Allowed) return subTurn;
@@ -392,6 +404,12 @@ public sealed class LiveContext : IDisposable
             return _dispatchingCombat == kind && !SubNeedsPriority &&
                 current.Snapshot.Target?.Id == dispatch.Snapshot.Target?.Id && CombatGeometry.InRange(current,
                     kind == LiveInputKind.Attack ? CombatAction.Attack : CombatAction.Tool, Config.CombatAssist);
+        if (kind == LiveInputKind.Turning && _preparingFanTurn)
+            return !SubNeedsPriority && CastTurn?.InFinalWindow != true &&
+                current.Snapshot.Target?.Id == dispatch.Snapshot.Target?.Id &&
+                current.Snapshot.Target?.Id == _fanTurnTarget &&
+                CombatGeometry.AttackDirection(current, Config.CombatAssist) == _fanTurnDesired &&
+                current.Snapshot.Player.Facing != _fanTurnDesired;
         if (kind == LiveInputKind.Stamina)
             return _dispatchingStamina && !SubNeedsPriority && Stamina?.NeedsToggle(current) == true;
         if (kind == LiveInputKind.CastTurning)
@@ -425,6 +443,38 @@ public sealed class LiveContext : IDisposable
         _dispatchingCombat = action == CombatAction.Attack ? LiveInputKind.Attack : LiveInputKind.Tool;
         try { return _input!.ExecuteCombat(action, key); }
         finally { _dispatchingCombat = null; }
+    }
+
+    private ActionResult PrepareFanAttack(LiveFrame frame, Direction desired)
+    {
+        if (_disposed || SubNeedsPriority || CastTurn?.InFinalWindow == true ||
+            frame.Snapshot.Target is not { Id: { } targetId } ||
+            !CheckSafety(LiveInputKind.Attack).Allowed)
+            return ActionResult.Rejected("Giro Fan bloqueado por segurança");
+        if (_fanTurnTarget != targetId) { _fanTurnAt = null; _fanTurnTarget = targetId; }
+        if (_fanTurnAt is { } issued && frame.CapturedAtMs <= issued)
+            return ActionResult.Deferred("Fan: aguardando leitura nova após giro");
+        if (desired == frame.Snapshot.Player.Facing)
+        {
+            _fanTurnAt = null;
+            return CombatGeometry.InRange(frame, CombatAction.Attack, Config.CombatAssist)
+                ? ActionResult.Ok("Fan alinhado na leitura atual")
+                : ActionResult.Rejected("Fan fora da faixa frontal");
+        }
+        if (_fanTurnAt is { } last && _clock.NowMs - last < 40)
+            return ActionResult.Deferred("Fan: intervalo mínimo do giro");
+        _dispatchFrame = frame;
+        _fanTurnDesired = desired;
+        _preparingFanTurn = true;
+        try
+        {
+            var turn = _input!.RequestTurn(desired);
+            if (!turn.Accepted) return ActionResult.Rejected($"Giro Fan recusado: {turn.Reason}");
+            _fanTurnAt = _clock.NowMs;
+            Log.Log(LogLevel.Info, $"Giro Fan {desired} enviado antes do AA; aguardando direção observada", EventOrigin.Executed);
+            return ActionResult.Deferred("Fan: aguardando direção observada antes do AA");
+        }
+        finally { _preparingFanTurn = false; }
     }
 
     private ActionResult DispatchFollow(FollowStep step)

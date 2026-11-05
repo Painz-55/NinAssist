@@ -68,12 +68,66 @@ public sealed class FanAttackTests
     {
         var clock = new SimulatedClock(0); var sent = new List<(CombatAction Action, string Key)>();
         var engine = new AutoAttackToolEngine(clock, Settings(AutoAttackMode.Fan) with { UseTool = false }, (action, key) =>
-        { sent.Add((action, key)); return ActionResult.Ok(); });
+        { sent.Add((action, key)); return ActionResult.Ok(); }, (frame, desired) =>
+            frame.Snapshot.Player.Facing == desired ? ActionResult.Ok() : ActionResult.Deferred("aguardando giro"));
         engine.Update(Frame(5, 0), true, false);
         clock.Advance(100); engine.Update(Frame(5, 0, at: 100), true, false);
         Assert.Single(sent);
         clock.Advance(100); engine.Update(Frame(5, 0, at: 200), true, false);
         Assert.Equal(new[] { (CombatAction.Attack, "A"), (CombatAction.Attack, "A") }, sent);
+    }
+
+    [Theory]
+    [InlineData(AutoAttackMode.Fan)]
+    [InlineData(AutoAttackMode.HisuyFan)]
+    public void RangedAttackTurnsFirstAndWaitsForObservedFacing(AutoAttackMode mode)
+    {
+        var clock = new SimulatedClock(100);
+        var history = new List<string>();
+        long? turnedAt = null;
+        var engine = new AutoAttackToolEngine(clock, Settings(mode) with { UseTool = false }, (action, key) =>
+        { history.Add(key); return ActionResult.Ok(); }, (frame, desired) =>
+        {
+            if (turnedAt is { } at && frame.CapturedAtMs <= at) return ActionResult.Deferred("nova leitura");
+            if (frame.Snapshot.Player.Facing == desired) return ActionResult.Ok();
+            history.Add($"Turn {desired}"); turnedAt = clock.NowMs;
+            return ActionResult.Deferred("aguardando direção");
+        });
+        // Target to the left is in range only after a real left-facing observation.
+        engine.Update(Frame(-2, 0, at: 100), true, false);
+        engine.Update(Frame(-2, 0, Direction.Left, at: 100), true, false);
+        Assert.Equal(new[] { "Turn Left" }, history);
+        clock.Advance(1);
+        engine.Update(Frame(-2, 0, Direction.Left, at: 101), true, false);
+        Assert.Equal(new[] { "Turn Left", "A" }, history);
+    }
+
+    [Fact]
+    public void NoTurnOrAttackForDiagonalOutOfBandTargetAndMeleeRemainsRadial()
+    {
+        var fan = Settings(AutoAttackMode.Fan) with { UseTool = false };
+        Assert.Equal(Direction.None, CombatGeometry.AttackDirection(Frame(2, 2), fan));
+        Assert.Equal(Direction.Left, CombatGeometry.AttackDirection(Frame(-2, 0), fan));
+        var sent = new List<string>();
+        var engine = new AutoAttackToolEngine(new SimulatedClock(0), fan, (action, key) =>
+        { sent.Add(key); return ActionResult.Ok(); }, (_, _) => ActionResult.Rejected("giro bloqueado"));
+        engine.Update(Frame(-2, 0), true, false);
+        engine.Update(Frame(2, 2), true, false);
+        Assert.Empty(sent);
+        var melee = new AutoAttackToolEngine(new SimulatedClock(0), Settings(AutoAttackMode.Melee) with { UseTool = false },
+            (action, key) => { sent.Add(key); return ActionResult.Ok(); });
+        melee.Update(Frame(-1, 0), true, false);
+        Assert.Equal(new[] { "A" }, sent);
+    }
+
+    [Fact]
+    public void FanWithoutTurnPreparationFailsClosedEvenWhenAlreadyFacingTarget()
+    {
+        var sent = new List<string>();
+        var engine = new AutoAttackToolEngine(new SimulatedClock(0), Settings(AutoAttackMode.Fan) with { UseTool = false },
+            (_, key) => { sent.Add(key); return ActionResult.Ok(); });
+        engine.Update(Frame(2, 0), true, false);
+        Assert.Empty(sent);
     }
 
     [Fact]
