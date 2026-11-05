@@ -17,9 +17,6 @@ if (args.Length == 3 && args[0] == "--projectile-catalog" && int.TryParse(args[1
     return ProjectileCatalogProbe.Run(catalogPid, args[2]);
 if (args.Length == 3 && args[0] == "--watch-local-projectiles" && int.TryParse(args[1], out var projectilePid))
     return ProjectileProbe.Run(projectilePid, args[2]);
-if (args.Length == 2 && args[0] == "--replay-sub-anchors") return SubAnchorReplay.Run(args[1]);
-if (args.Length == 4 && args[0] == "--sub-anchor-trace" && int.TryParse(args[1], out var anchorPid) && int.TryParse(args[3], out var anchorSeconds))
-    return SubAnchorTrace.Run(anchorPid, args[2], anchorSeconds);
 if (args.Length == 2 && args[0] == "--build-schema" && int.TryParse(args[1], out var schemaPid)) return BuildSchemaProbe.Run(schemaPid);
 if (args.Length == 2 && args[0] == "--profile-candidates" && int.TryParse(args[1], out var candidatePid))
     return ProfileCandidateProbe.Run(candidatePid);

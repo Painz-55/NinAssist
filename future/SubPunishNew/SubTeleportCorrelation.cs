@@ -2,7 +2,7 @@ namespace NinOnlineAutoAssist.Live;
 
 public sealed record SubTeleportEvidence(long CapturedAtMs, double Distance, IReadOnlyList<string> Sources);
 
-/// <summary>Observed position discontinuity, NOT a server-confirmed teleport/substitution event.</summary>
+/// <summary>Archived experiment. Observed position discontinuity, NOT a server-confirmed teleport/substitution event.</summary>
 public static class SubTeleportCorrelation
 {
     public const long WindowMs = 120;

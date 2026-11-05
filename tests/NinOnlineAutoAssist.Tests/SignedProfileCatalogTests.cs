@@ -15,6 +15,15 @@ public sealed class SignedProfileCatalogTests
         // Valid signature even when there is no entry for this fingerprint.
         Assert.Null(SignedProfileCatalog.VerifyAndSelect(payload, signature, SignedProfileCatalog.PublicKey,
             GameMemoryProfile.Updated20261104.Sha256, GameMemoryProfile.Updated20261104.CommonSha256));
+        var current = SignedProfileCatalog.VerifyAndSelect(payload, signature, SignedProfileCatalog.PublicKey,
+            "6E1C797CC987C8A0481E016CEC6DCE64C5B6118B41BD3D7BEA33997D94F15338",
+            "63C3F7FB9380F630DB9ADE5F591E22591810139C0B844BAA413731D1A0A6CAD0");
+        Assert.NotNull(current);
+        Assert.True(current.ApprovesAttackMode("Melee"));
+        Assert.False(current.ApprovesAttackMode("Fan"));
+        Assert.False(current.ApprovesAttackMode("HisuyFan"));
+        Assert.Contains("Tool", current.ValidatedInputKinds);
+        Assert.Contains("Punish", current.ValidatedInputKinds);
     }
 
     private static (byte[] Payload, byte[] Signature, string PublicKey) Sign(object document)
@@ -79,6 +88,52 @@ public sealed class SignedProfileCatalogTests
             p.Sha256, p.CommonSha256)!;
         Assert.Equal(["Stamina"], found.ValidatedInputKinds);
         Assert.DoesNotContain("Attack", found.ValidatedInputKinds);
+    }
+
+    [Fact]
+    public void SignedAttackApprovalDoesNotAuthorizeOtherModes()
+    {
+        var p = GameMemoryProfile.Updated20261104;
+        var signed = Sign(new { schema = 1, profiles = new[] { p with
+        {
+            ActuationValidated = true, ValidatedInputKinds = ["Attack"], ValidatedAttackModes = ["Melee"]
+        } } });
+        var found = SignedProfileCatalog.VerifyAndSelect(signed.Payload, signed.Signature, signed.PublicKey,
+            p.Sha256, p.CommonSha256)!;
+        Assert.True(found.ApprovesAttackMode("Melee"));
+        Assert.False(found.ApprovesAttackMode("Fan"));
+        Assert.False(found.ApprovesAttackMode("HisuyFan"));
+        Assert.False((found with { ValidatedAttackModes = [] }).ApprovesAttackMode("Melee"));
+        Assert.False((found with { ValidatedInputKinds = [] }).ApprovesAttackMode("Melee"));
+        signed.Payload[^3] ^= 1;
+        Assert.Throws<CryptographicException>(() => SignedProfileCatalog.VerifyAndSelect(
+            signed.Payload, signed.Signature, signed.PublicKey, p.Sha256, p.CommonSha256));
+    }
+
+    [Theory]
+    [InlineData("Unvalidated")]
+    [InlineData("Fan,Fan")]
+    public void MalformedOrDuplicateAttackModesFailClosed(string modes)
+    {
+        var p = GameMemoryProfile.Updated20261104;
+        var signed = Sign(new { schema = 1, profiles = new[] { p with
+        {
+            ActuationValidated = true, ValidatedInputKinds = ["Attack"], ValidatedAttackModes = modes.Split(',')
+        } } });
+        Assert.Throws<InvalidOperationException>(() => SignedProfileCatalog.VerifyAndSelect(
+            signed.Payload, signed.Signature, signed.PublicKey, p.Sha256, p.CommonSha256));
+    }
+
+    [Fact]
+    public void AttackModesWithoutAttackInputFailClosed()
+    {
+        var p = GameMemoryProfile.Updated20261104;
+        var signed = Sign(new { schema = 1, profiles = new[] { p with
+        {
+            ActuationValidated = true, ValidatedInputKinds = ["Tool"], ValidatedAttackModes = ["Melee"]
+        } } });
+        Assert.Throws<InvalidOperationException>(() => SignedProfileCatalog.VerifyAndSelect(
+            signed.Payload, signed.Signature, signed.PublicKey, p.Sha256, p.CommonSha256));
     }
 
     [Fact]

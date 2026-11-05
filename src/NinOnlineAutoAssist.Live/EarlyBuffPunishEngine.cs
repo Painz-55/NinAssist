@@ -173,6 +173,21 @@ public sealed class EarlyBuffPunishEngine : ILivePunishEngine
     private void DispatchNext()
     {
         var now = _clock.NowMs;
+        // Disabled slots are configuration, never an instruction to send a key.
+        // Keep each transition delay before advancing a skipped slot.
+        while (_nextKey < _options.ComboKeys.Length && _options.ComboKeys[_nextKey].Equals("null", StringComparison.OrdinalIgnoreCase))
+        {
+            var due = NextKeyDueAtMs;
+            if (due is { } at && now < at) return;
+            _nextKey++;
+            _lastKeyAt = now;
+            if (_nextKey == _options.ComboKeys.Length)
+            {
+                State = EarlyPunishState.Completed; _finishedAt = now;
+                Status = "Combo sem teclas restantes (null); nenhum efeito confirmado";
+                return;
+            }
+        }
         if (_nextKey == 0 && now < _sequenceReadyAt)
         {
             Status = $"DEBUG: aguardando {_sequenceReadyAt - now} ms após remoção confirmada antes de {_options.ComboKeys[0]}";

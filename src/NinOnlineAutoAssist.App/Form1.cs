@@ -20,7 +20,7 @@ public sealed class Form1 : Form
     private readonly FirebaseSession _session;
     private int _permissionsMask;
     public bool ReturnToLogin { get; private set; }
-    private AppFeature SubFeature => _config.Live.PunishMode == LivePunishMode.AnchoredExperimental ? AppFeature.SubPunishNew : AppFeature.SubPunishLegacy;
+    private AppFeature SubFeature => AppFeature.SubPunishLegacy;
     private bool Allowed(AppFeature feature) => _session.Access.Allows(feature);
     private int PermissionsMask => Enum.GetValues<AppFeature>().Aggregate(0, (mask, feature) => Allowed(feature) ? mask | (1 << (int)feature) : mask);
     private Button _inspectionButton = null!;
@@ -58,6 +58,7 @@ public sealed class Form1 : Form
     private DataGridView _playersGrid = null!;
     private Label _playersStatus = null!;
     private MapPlayersFrame? _shownPlayers;
+    private MapPlayersPlot _playersPlot = null!;
     private CheckBox _hideOwnVillage = null!;
     private bool _shownHideOwnVillage;
     private Button _btnCastTurn = null!;
@@ -128,11 +129,12 @@ public sealed class Form1 : Form
         _btnCastTurn = MakeModuleButton("AUTO CAST TURN", false);
         _btnCastTurn.Click += (_, _) =>
         {
-            var enabled = !(_btnCastTurn.Tag is true); _btnCastTurn.Tag = enabled;
-            _ctx?.SetCastTurnEnabled(enabled); RefreshModuleButtons();
+            var enabled = !(_btnCastTurn.Tag is true);
+            _btnCastTurn.Tag = _ctx?.SetCastTurnEnabled(enabled) == true;
+            RefreshModuleButtons();
         };
         var castMenu = new ContextMenuStrip();
-        castMenu.Items.Add("Ajustar janela final do cast…", null, (_, _) => ConfigureCastTurn());
+        castMenu.Items.Add("Excluir jutsus do Cast Turn…", null, (_, _) => ConfigureCastTurn());
         _btnCastTurn.ContextMenuStrip = castMenu;
         _btnSubPunish = MakeModuleButton("SUBPUNISH LEGADO", false);
         _btnSubPunish.Click += (_, _) => ToggleSubPunish();
@@ -230,8 +232,10 @@ public sealed class Form1 : Form
         settings.Click += (_, _) => ConfigureKeys();
         var combatSettings = new Button { Text = "AA / TOOL / FOLLOW / STAMINA", Width = 240, Height = 32, BackColor = PanelAlt, ForeColor = Fg };
         combatSettings.Click += (_, _) => ConfigureCombat();
+        var castSettings = new Button { Text = "EXCLUIR JUTSUS CAST TURN", Width = 210, Height = 32, BackColor = PanelAlt, ForeColor = Fg };
+        castSettings.Click += (_, _) => ConfigureCastTurn();
         var settingsButtons = new FlowLayoutPanel { Dock = DockStyle.Fill };
-        settingsButtons.Controls.AddRange(new Control[] { settings, combatSettings });
+        settingsButtons.Controls.AddRange(new Control[] { settings, combatSettings, castSettings });
         rightPanel.Controls.Add(settingsButtons, 0, 6);
         mid.Controls.Add(rightPanel, 1, 0);
 
@@ -243,22 +247,29 @@ public sealed class Form1 : Form
         logTab.Controls.Add(_rtbLog);
         _playersGrid = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false,
             AllowUserToDeleteRows = false, RowHeadersVisible = false, MultiSelect = false,
-            SelectionMode = DataGridViewSelectionMode.FullRowSelect, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None,
             BackgroundColor = Panel, ForeColor = Fg, EnableHeadersVisualStyles = false };
         _playersGrid.DefaultCellStyle.BackColor = Panel;
         _playersGrid.DefaultCellStyle.ForeColor = Fg;
         _playersGrid.ColumnHeadersDefaultCellStyle.BackColor = PanelAlt;
         _playersGrid.ColumnHeadersDefaultCellStyle.ForeColor = Fg;
-        foreach (var caption in new[] { "Slot", "Nome", "Vila", "Posição (tiles)", "Distância", "Você / Alvo", "Visibilidade", "Transformação" })
+        foreach (var caption in new[] { "Slot", "Nome", "Vila", "Posição (tiles)", "Distância", "ΔX", "ΔY", "Você / Alvo", "Visibilidade", "Transformação" })
             _playersGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = caption, SortMode = DataGridViewColumnSortMode.NotSortable });
-        _playersGrid.Columns[0].FillWeight = 35;
-        _playersGrid.Columns[1].FillWeight = 160;
+        var columnWidths = new[] { 48, 150, 85, 105, 75, 65, 65, 90, 110, 110 };
+        for (var i = 0; i < columnWidths.Length; i++) _playersGrid.Columns[i].Width = columnWidths[i];
         _playersStatus = new Label { Dock = DockStyle.Top, Height = 44, ForeColor = Warn,
             Text = "Aguardando lista local do mapa.\nVilas: Mist azul · Sand amarelo · Leaf verde · Renegado vermelho · Desconhecida neutro." };
         _hideOwnVillage = new CheckBox { Text = "Ocultar minha vila — mostrar somente outras vilas", Dock = DockStyle.Top,
             Height = 28, ForeColor = Fg, Checked = false };
         _hideOwnVillage.CheckedChanged += (_, _) => RefreshPlayers();
-        playersTab.Controls.Add(_playersGrid); playersTab.Controls.Add(_playersStatus); playersTab.Controls.Add(_hideOwnVillage);
+        _playersPlot = new MapPlayersPlot();
+        var mapBody = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+        mapBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
+        mapBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+        mapBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        mapBody.Controls.Add(_playersGrid, 0, 0);
+        mapBody.Controls.Add(_playersPlot, 1, 0);
+        playersTab.Controls.Add(mapBody); playersTab.Controls.Add(_playersStatus); playersTab.Controls.Add(_hideOwnVillage);
         tabs.TabPages.Add(playersTab); tabs.TabPages.Add(logTab);
         root.Controls.Add(tabs, 0, 3);
     }
@@ -277,9 +288,12 @@ public sealed class Form1 : Form
         if (ReferenceEquals(list, _shownPlayers) && hideOwnVillage == _shownHideOwnVillage) return;
         _shownPlayers = list;
         _shownHideOwnVillage = hideOwnVillage;
-        if (list is null) { _playersGrid.Rows.Clear(); return; }
+        if (list is null) { _playersGrid.Rows.Clear(); _playersPlot.Offsets = []; _playersPlot.Invalidate(); return; }
         var visiblePlayers = list.ForDisplay(hideOwnVillage);
         var player = _ctx?.Frame?.Snapshot.Player;
+        _playersPlot.Offsets = player is null ? [] : visiblePlayers.Where(p => p.X.HasValue && p.Y.HasValue)
+            .Select(p => (p.X!.Value - player.PositionX, p.Y!.Value - player.PositionY, p.IsSelected)).ToArray();
+        _playersPlot.Invalidate();
         var sameSlots = _playersGrid.Rows.Count == visiblePlayers.Count && visiblePlayers.Select((p, i) =>
             Equals(_playersGrid.Rows[i].Tag, p.Slot)).All(v => v);
         if (!sameSlots) _playersGrid.Rows.Clear();
@@ -289,7 +303,9 @@ public sealed class Form1 : Form
             var position = p.X is { } x && p.Y is { } y ? $"{x:0.0}, {y:0.0}" : "Desconhecida";
             var distance = player is not null && p.X is { } px && p.Y is { } py
                 ? Math.Sqrt(Math.Pow(px - player.PositionX, 2) + Math.Pow(py - player.PositionY, 2)).ToString("0.0") : "?";
-            object[] values = { p.Slot, p.Name, PlayerVillages.Label(p.Village), position, distance,
+            var dx = player is not null && p.X is { } vx ? (vx - player.PositionX).ToString("+0.0;-0.0;0.0") : "?";
+            var dy = player is not null && p.Y is { } vy ? (vy - player.PositionY).ToString("+0.0;-0.0;0.0") : "?";
+            object[] values = { p.Slot, p.Name, PlayerVillages.Label(p.Village), position, distance, dx, dy,
                 p.IsLocal ? "VOCÊ" : p.IsSelected ? "ALVO" : "—", "Não mapeada", "Não mapeada" };
             if (sameSlots) _playersGrid.Rows[i].SetValues(values);
             else { var row = _playersGrid.Rows.Add(values); _playersGrid.Rows[row].Tag = p.Slot; }
@@ -342,6 +358,10 @@ public sealed class Form1 : Form
     // ═══════════════════════════════ config / context ═══════════════════════════════
 
     private static string ConfigPath => AppPaths.Settings.ConfigPath;
+    private string? _loadedCharacter;
+    private string SettingsPath => _loadedCharacter is null
+        ? throw new InvalidOperationException("Aguarde a identidade local verificada antes de salvar.")
+        : AppPaths.Settings.CharacterConfigPath(_loadedCharacter);
 
     private void LoadConfigAndContext()
     {
@@ -419,7 +439,7 @@ public sealed class Form1 : Form
         using var dialog = new KeySettingsForm(_config.Live);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         var updated = _config with { Live = dialog.Settings };
-        try { ConfigLoader.Save(ConfigPath, updated); }
+        try { ConfigLoader.Save(SettingsPath, updated); }
         catch (Exception ex) { AppendLog(LogLevel.Error, $"Não foi possível salvar: {ex.Message}", null); return; }
         _config = updated;
         _allowSequence.Text = $"AUTORIZAR {string.Join(" → ", updated.Live.PunishKeys)} + GIRO SUB (buff/+1s)";
@@ -434,7 +454,7 @@ public sealed class Form1 : Form
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         var updated = _config with { CombatAssist = dialog.Settings,
             Live = _config.Live with { AllowCounterAttackSequence = false } };
-        try { ConfigLoader.Save(ConfigPath, updated); }
+        try { ConfigLoader.Save(SettingsPath, updated); }
         catch (Exception ex) { AppendLog(LogLevel.Error, $"Não foi possível salvar: {ex.Message}", null); return; }
         _config = updated; ConnectToGame();
         AppendLog(LogLevel.Info, "AA/Tool/Follow salvos; módulos OFF e permissões revogadas.", EventOrigin.Requested);
@@ -446,7 +466,7 @@ public sealed class Form1 : Form
         using var dialog = new AutoCastTurnForm(_config.AutoCastTurn);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         var updated = _config with { AutoCastTurn = dialog.Settings };
-        try { ConfigLoader.Save(ConfigPath, updated); }
+        try { ConfigLoader.Save(SettingsPath, updated); }
         catch (Exception ex) { AppendLog(LogLevel.Error, $"Não foi possível salvar: {ex.Message}", null); return; }
         _config = updated; ConnectToGame();
     }
@@ -475,9 +495,14 @@ public sealed class Form1 : Form
     {
         RefreshModuleButton(_btnAutoTurning, "AUTO TURNING");
         RefreshModuleButton(_btnCastTurn, "AUTO CAST TURN");
-        RefreshModuleButton(_btnSubPunish, _config.Live.PunishMode == LivePunishMode.AnchoredExperimental ? "SUBPUNISH NOVO\nEXPERIMENTAL" : "SUBPUNISH LEGADO");
-        RefreshModuleButton(_btnCombat, Allowed(AppFeature.AutoAttack) && Allowed(AppFeature.Tool) ? "AA + TOOL"
-            : Allowed(AppFeature.AutoAttack) ? "AA (TOOL BLOQUEADO)" : Allowed(AppFeature.Tool) ? "TOOL (AA BLOQUEADO)" : "AA / TOOL BLOQUEADOS");
+        RefreshModuleButton(_btnSubPunish, "SUBPUNISH LEGADO");
+        var profile = _ctx?.Provider?.Profile;
+        var attackApproved = Allowed(AppFeature.AutoAttack) && profile is { ActuationValidated: true } &&
+            profile.ApprovesAttackMode(_config.CombatAssist.AttackMode.ToString());
+        var toolApproved = Allowed(AppFeature.Tool) && profile is { ActuationValidated: true } &&
+            (!profile.ExternalProfile || profile.ValidatedInputKinds.Contains(nameof(LiveInputKind.Tool), StringComparer.Ordinal));
+        RefreshModuleButton(_btnCombat, attackApproved && toolApproved ? "AA + TOOL"
+            : attackApproved ? "AA (TOOL BLOQUEADO)" : toolApproved ? "TOOL (AA BLOQUEADO)" : "AA / TOOL BLOQUEADOS");
         RefreshModuleButton(_btnFollow, "AUTO FOLLOW");
         RefreshModuleButton(_btnStamina, "AUTO STAMINA");
     }
@@ -545,7 +570,31 @@ public sealed class Form1 : Form
         }
         if (_ctx?.Frame is { } observed)
         {
+            if (_loadedCharacter != observed.PlayerName && !string.IsNullOrWhiteSpace(observed.PlayerName))
+            {
+                EmergencyStop();
+                try
+                {
+                    var path = AppPaths.Settings.EnsureCharacterConfig(observed.PlayerName);
+                    var settings = ConfigLoader.Load(path);
+                    _loadedCharacter = observed.PlayerName;
+                    _txtCharacter.Text = observed.PlayerName;
+                    _config = settings with { Live = settings.Live with {
+                        CharacterName = observed.PlayerName, AllowCounterAttackSequence = false } };
+                    _allowSequence.Checked = _allowCombat.Checked = false;
+                    _allowSequence.Text = $"AUTORIZAR {string.Join(" → ", _config.Live.PunishKeys)} + GIRO SUB (buff/+1s)";
+                    AppendLog(LogLevel.Info, $"Configurações de {observed.PlayerName} carregadas; módulos e consentimento OFF.", null);
+                    ConnectToGame(); // rebuild engines with the verified character's settings
+                }
+                catch (Exception ex)
+                {
+                    DisconnectFromGame();
+                    AppendLog(LogLevel.Error, $"Configuração por personagem indisponível; conexão desarmada: {ex.Message}", null);
+                }
+                return;
+            }
             if (_autoCharacter.Checked && _txtCharacter.Text != observed.PlayerName) _txtCharacter.Text = observed.PlayerName;
+            if (_loadedCharacter == observed.PlayerName) _ctx.BindCharacterSettings(observed.PlayerName);
             _session.ObserveCharacter(observed.PlayerName);
         }
         RefreshModeBadge();

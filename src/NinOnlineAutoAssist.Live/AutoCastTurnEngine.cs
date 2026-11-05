@@ -84,7 +84,7 @@ public sealed class AutoCastTurnEngine
     {
         if (!Fresh(frame, now) || Dispatching is not { } request || frame!.Cast is not { Active: true, Valid: true } cast ||
             frame.Map != request.Map || frame.Snapshot.Player.Id != request.PlayerId || !frame.Snapshot.Player.IsAlive ||
-            frame.Snapshot.Target?.Id != request.TargetId || cast.SpellId != request.SpellId ||
+            frame.Snapshot.Target?.Id != request.TargetId || cast.SpellId != request.SpellId || !_settings.Allows(cast.SpellId) ||
             cast.StartedAtGameMs != request.StartedAtGameMs || cast.TotalMs != request.TotalMs) return false;
         if (!TimingValid(frame, cast, now)) return false;
         var remaining = Remaining(frame, cast, now);
@@ -119,6 +119,8 @@ public sealed class AutoCastTurnEngine
             Status = "Auto Cast Turn: aguardando conjuração"; return;
         }
         if (!_sawIdle) { Status = "Auto Cast Turn: aguardando fim do cast atual para armar o próximo"; return; }
+        if (!_settings.Allows(cast.SpellId))
+        { _tracking = null; _consumed = true; Status = $"Auto Cast Turn: jutsu ID {cast.SpellId} excluído; sem giro"; return; }
         var target = frame.Snapshot.Target;
         if (_tracking is null || _tracking.SpellId != cast.SpellId || _tracking.StartedAtGameMs != cast.StartedAtGameMs)
         {

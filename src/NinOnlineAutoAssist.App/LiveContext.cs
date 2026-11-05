@@ -15,8 +15,7 @@ namespace NinOnlineAutoAssist.App;
 public sealed class LiveContext : IDisposable
 {
     private readonly AccessLease _access;
-    private AppFeature SubFeature => Config.Live.PunishMode == Core.Config.LivePunishMode.AnchoredExperimental
-        ? AppFeature.SubPunishNew : AppFeature.SubPunishLegacy;
+    private AppFeature SubFeature => AppFeature.SubPunishLegacy;
     private int _accessMask;
     private int AccessMask => Enum.GetValues<AppFeature>().Aggregate(0, (mask, feature) =>
         _access.Allows(feature) ? mask | (1 << (int)feature) : mask);
@@ -44,6 +43,12 @@ public sealed class LiveContext : IDisposable
     private string? _fanTurnTarget;
     private Task? _reader;
     private LiveFrame? _frame, _dispatchFrame;
+    private string? _settingsBoundToCharacter;
+    public void BindCharacterSettings(string verifiedName)
+    {
+        if (Frame?.PlayerName != verifiedName) throw new InvalidOperationException("Identidade local não confirmada.");
+        Volatile.Write(ref _settingsBoundToCharacter, verifiedName);
+    }
     private NavigationFrame? _navigation;
     private MapPlayersFrame? _mapPlayers;
     public MapPlayersFrame? MapPlayers => _access.Allows(AppFeature.MapPlayers) && Volatile.Read(ref _mapPlayers) is { } list && list.IsCurrent(Frame, _clock.NowMs) ? list : null;
@@ -319,17 +324,18 @@ public sealed class LiveContext : IDisposable
         _automation?.Wake();
     }
 
-    public void SetCastTurnEnabled(bool enabled)
+    public bool SetCastTurnEnabled(bool enabled)
     {
         enabled &= _access.Allows(AppFeature.AutoCastTurn) && Provider?.Profile.CastTiming is not null;
         if (!enabled) _castTurnEnabled = false;
         lock (_automationLock)
         {
-            if (_disposed) return;
+            if (_disposed) return false;
             CastTurn?.Reset(); _castTurnEnabled = enabled;
-            Log.Log(LogLevel.Info, $"Auto Cast Turn {(enabled ? "ON" : "OFF")}; final do cast observado, sem tecla de ativação", EventOrigin.Requested);
+            Log.Log(LogLevel.Info, $"Auto Cast Turn {(enabled ? "ON" : "OFF")}; todos os casts válidos exceto IDs excluídos: {string.Join(", ", Config.AutoCastTurn.ExcludedSpellIds)}", EventOrigin.Requested);
         }
         _automation?.Wake();
+        return enabled;
     }
 
     private SafetyDecision CheckSafety(LiveInputKind kind)
@@ -338,6 +344,8 @@ public sealed class LiveContext : IDisposable
             return new(false, "Perfil de jogo não aprovado para enviar teclas");
         if (Provider.Profile.ExternalProfile && !Provider.Profile.ValidatedInputKinds.Contains(kind.ToString(), StringComparer.Ordinal))
             return new(false, $"{kind}: sinal ainda não validado para esta build");
+        if (kind == LiveInputKind.Attack && !Provider.Profile.ApprovesAttackMode(Config.CombatAssist.AttackMode.ToString()))
+            return new(false, $"Attack: modo {Config.CombatAssist.AttackMode} não aprovado para esta build");
         var feature = kind switch
         {
             LiveInputKind.Attack => AppFeature.AutoAttack, LiveInputKind.Tool => AppFeature.Tool,
@@ -346,6 +354,8 @@ public sealed class LiveContext : IDisposable
         };
         if (kind != LiveInputKind.Turning && !_access.Allows(feature)) return new(false, "Recurso não autorizado pelo Firebase");
         var frame = Volatile.Read(ref _frame);
+        if (frame is null || Volatile.Read(ref _settingsBoundToCharacter) != frame.PlayerName)
+            return new(false, "Configuração do personagem ainda não verificada; inputs OFF");
         var now = _clock.NowMs;
         var foreground = Provider is not null && LiveInputController.IsGameForeground(Provider.ProcessId);
         var emergency = LiveInputController.EmergencyPending();
@@ -377,7 +387,7 @@ public sealed class LiveContext : IDisposable
         {
             if (_preparingFanTurn)
             {
-                if (Provider?.Profile.ValidatedInputKinds.Contains(nameof(LiveInputKind.Attack), StringComparer.Ordinal) != true ||
+                if (Provider?.Profile.ApprovesAttackMode(Config.CombatAssist.AttackMode.ToString()) != true ||
                     !_access.Allows(AppFeature.AutoAttack)) return new(false, "Giro Fan sem aprovação de Attack");
                 return LiveSafetyGate.CheckTargetedModule(frame, now, _combatEnabled, _combatAuthorized,
                     foreground, emergency, text);

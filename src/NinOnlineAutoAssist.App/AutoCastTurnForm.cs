@@ -9,17 +9,36 @@ internal sealed class AutoCastTurnForm : Form
     {
         Settings = settings;
         Text = "Auto Cast Turn — janela final";
-        ClientSize = new Size(500, 280); FormBorderStyle = FormBorderStyle.FixedDialog;
+        ClientSize = new Size(500, 410); FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterParent; MaximizeBox = MinimizeBox = false;
         var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,
-            WrapContents = false, Padding = new Padding(14) };
+            WrapContents = false, Padding = new Padding(14), AutoScroll = true };
         panel.Controls.Add(new Label { Width = 465, Height = 125,
-            Text = "Mantém/corrige a direção do alvo até o fim do cast, inclusive andando. Não conjura magias nem bloqueia movimento.\nJanela final ajustável (40–250 ms), limitada ao último quarto da barra. Padrão: 100 ms.\nCancelamentos liberam a tecla. Cancelar após o giro não desfaz input já enviado. Efeito/hit não garantidos." });
+            Text = "Por padrão, gira no fim de todo cast válido observado com alvo. Somente os IDs informados abaixo NÃO giram. Confira IDs no diagnóstico; não adivinhe.\nMantém/corrige a direção na janela final (40–250 ms, até o último quarto da barra). Não conjura magia. F12 e cancelamentos liberam a tecla; efeito/hit não garantidos." });
+        panel.Controls.Add(new Label { Text = "IDs de jutsu a EXCLUIR (um por linha; vazio = nenhum):", Width = 465, Height = 24 });
+        var exclusions = new TextBox { Multiline = true, ScrollBars = ScrollBars.Vertical, Width = 455, Height = 100,
+            Text = string.Join(Environment.NewLine, settings.ExcludedSpellIds) };
+        panel.Controls.Add(exclusions);
         panel.Controls.Add(new Label { AutoSize = true, Text = "Antecedência em milissegundos:" });
         var lead = new NumericUpDown { Minimum = 40, Maximum = 250, Increment = 10, Value = Math.Clamp(settings.LeadTimeMs, 40, 250), Width = 180 };
         panel.Controls.Add(lead);
         var save = new Button { Text = "Salvar (módulos permanecem OFF)", AutoSize = true };
-        save.Click += (_, _) => { Settings = settings with { LeadTimeMs = (int)lead.Value }; Settings.Validate(); DialogResult = DialogResult.OK; Close(); };
+        save.Click += (_, _) =>
+        {
+            try
+            {
+                var ids = new List<int>();
+                foreach (var raw in exclusions.Lines.Where(line => !string.IsNullOrWhiteSpace(line)))
+                {
+                    if (!int.TryParse(raw.Trim(), out var id) || id <= 0 || ids.Contains(id))
+                        throw new ArgumentException($"ID inválido ou repetido: {raw}. Informe IDs positivos únicos.");
+                    ids.Add(id);
+                }
+                var updated = settings with { LeadTimeMs = (int)lead.Value, ExcludedSpellIds = ids.ToArray() };
+                updated.Validate(); Settings = updated; DialogResult = DialogResult.OK; Close();
+            }
+            catch (ArgumentException ex) { MessageBox.Show(this, ex.Message, "Cast Turn inválido"); }
+        };
         panel.Controls.Add(save); Controls.Add(panel);
     }
 }

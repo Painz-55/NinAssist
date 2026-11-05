@@ -9,6 +9,11 @@ public sealed record GameMemoryProfile
     public bool ExternalProfile { get; init; }
     public bool ActuationValidated { get; init; } = true;
     public string[] ValidatedInputKinds { get; init; } = [];
+    // A generic Attack approval is insufficient: modes have different targeting and input semantics.
+    public string[] ValidatedAttackModes { get; init; } = [];
+    public bool ApprovesAttackMode(string mode) => ActuationValidated &&
+        ValidatedInputKinds.Contains("Attack", StringComparer.Ordinal) &&
+        ValidatedAttackModes.Contains(mode, StringComparer.Ordinal);
     public string Roots { get; init; } = LiveMemoryProfile.Roots;
     public string Globals { get; init; } = LiveMemoryProfile.Globals;
     public string Players { get; init; } = LiveMemoryProfile.Players;

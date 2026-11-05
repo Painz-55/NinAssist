@@ -9,7 +9,7 @@ internal sealed class KeySettingsForm : Form
     {
         Settings = settings;
         Text = "Teclas e intervalos — aplicação desarma os módulos";
-        ClientSize = new Size(590, 670);
+        ClientSize = new Size(720, Math.Max(540, Math.Min(820, Screen.PrimaryScreen?.WorkingArea.Height - 100 ?? 820)));
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
@@ -18,22 +18,18 @@ internal sealed class KeySettingsForm : Form
         Controls.Add(panel);
         Label Label(string text)
         {
-            var label = new Label { Text = text, AutoSize = true, Margin = new Padding(0, 8, 0, 4) };
+            var label = new Label { Text = text, AutoSize = true, MaximumSize = new Size(660, 0),
+                Margin = new Padding(0, 8, 0, 4) };
             panel.Controls.Add(label);
             return label;
         }
-        Label("Versão do SubPunish (somente uma executa por vez):");
-        var mode = new ComboBox { Width = 520, DropDownStyle = ComboBoxStyle.DropDownList };
-        mode.Items.AddRange(new object[] { "SubPunish Legado — duas ausências antecipadas (funcional)",
-            "SubPunish Novo — remoção + salto local (EXPERIMENTAL)" });
-        mode.SelectedIndex = settings.PunishMode == LivePunishMode.AnchoredExperimental ? 1 : 0;
-        panel.Controls.Add(mode);
-        Label("Novo não usa o gatilho legado como fallback. Sem deslocamento correlacionado, não dispara.\nLegado preserva o funcionamento anterior. Salvar desarma ambos.");
-        Label("SubPunish: três teclas, na ordem (vinculadas a Attack/Hotbar no jogo)");
-        var row = new FlowLayoutPanel { Width = 490, Height = 35 };
+        Label("SubPunish Legado — duas ausências antecipadas. O modo Novo foi retirado da aplicação.");
+        Label("SubPunish: três posições; null pula a posição sem enviar tecla");
+        var row = new FlowLayoutPanel { Width = 630, Height = 40 };
         var combo = Enumerable.Range(0, 3).Select(i =>
         {
-            var box = new ComboBox { Width = 140, DropDownStyle = ComboBoxStyle.DropDownList };
+            var box = new ComboBox { Width = 190, DropDownStyle = ComboBoxStyle.DropDownList };
+            box.Items.Add(LiveKeySettings.Disabled);
             box.Items.AddRange(LiveKeySettings.Keys.Where(k => k.Value < 0xA0 && k.Key != "F").Select(k => (object)k.Key).ToArray());
             box.SelectedItem = settings.PunishKeys.ElementAtOrDefault(i);
             row.Controls.Add(box);
@@ -62,9 +58,13 @@ internal sealed class KeySettingsForm : Form
         Label("0 ms = sem pausa extra. Cada toque mantém cerca de 40 ms.");
         Label("Turn: segurar QUALQUER uma das teclas marcadas (não é combinação)");
         Label("Pode compartilhar teclas do combo; se estiver segurada, o combo aguarda soltá-la.");
-        var activation = new CheckedListBox { Width = 490, Height = 165, CheckOnClick = true, MultiColumn = true, ColumnWidth = 120 };
+        var activation = new CheckedListBox { Width = 630, Height = 230, CheckOnClick = true, MultiColumn = true, ColumnWidth = 150 };
         foreach (var key in LiveKeySettings.Keys.Keys)
             activation.Items.Add(key, settings.TurnActivationKeys.Contains(key, StringComparer.OrdinalIgnoreCase));
+        var clear = new Button { Text = "Desmarcar Turn", Width = 140, Height = 25, Margin = new Padding(12, 6, 0, 6) };
+        clear.Click += (_, _) => { for (var i = 0; i < activation.Items.Count; i++) activation.SetItemChecked(i, false); };
+        new ToolTip().SetToolTip(clear, "Desmarca as teclas do Auto Turn. A mudança só é aplicada ao salvar.");
+        panel.Controls.Add(clear);
         panel.Controls.Add(activation);
         Label("F12 e setas são reservados. F continua manual.\nSalvar cancela o combo e revoga a autorização ofensiva.");
         var save = new Button { Text = "SALVAR E APLICAR", Width = 190, Height = 36 };
@@ -79,7 +79,7 @@ internal sealed class KeySettingsForm : Form
                 if (first.Value + second.Value >= settings.PunishSequenceTimeoutMs - 150)
                     throw new ArgumentException("Intervalos excedem o limite de tempo do combo.");
                 Settings = settings with { PunishKeys = canonical.Take(3).ToArray(), TurnActivationKeys = canonical.Skip(3).ToArray(),
-                    PunishMode = mode.SelectedIndex == 1 ? LivePunishMode.AnchoredExperimental : LivePunishMode.Legacy,
+                    PunishMode = LivePunishMode.Legacy,
                     PunishFirstToSecondMs = (long)first.Value, PunishSecondToThirdMs = (long)second.Value,
                     PunishTriggerDelayMs = (long)triggerDelay.Value,
                     AllowCounterAttackSequence = false };

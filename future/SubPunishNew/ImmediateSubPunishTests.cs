@@ -6,6 +6,7 @@ using NinOnlineAutoAssist.Simulation;
 
 namespace NinOnlineAutoAssist.Tests;
 
+// Archived cross-mode regression tests for the retired experimental engine.
 public sealed class ImmediateSubPunishTests
 {
     private sealed class Executor(Func<string, ActionResult> execute) : IActionExecutor

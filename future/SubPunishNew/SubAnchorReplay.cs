@@ -3,7 +3,7 @@ using NinOnlineAutoAssist.Core.Abstractions;
 using NinOnlineAutoAssist.Core.Models;
 using NinOnlineAutoAssist.Live;
 
-namespace NinOnlineAutoAssist.Diagnostics;
+namespace NinOnlineAutoAssist.Diagnostics; // Archived: not compiled in the shipping diagnostic tool.
 
 /// <summary>Offline event replay with a recording executor: never sends keyboard input.</summary>
 public static class SubAnchorReplay

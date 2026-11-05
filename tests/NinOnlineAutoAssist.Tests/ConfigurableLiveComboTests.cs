@@ -133,6 +133,97 @@ public sealed class ConfigurableLiveComboTests
         finally { File.Delete(path); }
     }
 
+    [Fact]
+    public void DisabledMiddleSlotNeverDispatchesAndPreservesSecondTransition()
+    {
+        var clock = new SimulatedClock(0);
+        var executor = new SimulatedActionExecutor(clock);
+        var engine = new EarlyBuffPunishEngine(executor, clock, new EarlyPunishOptions
+        { ComboKeys = ["A", "null", "S"], FirstToSecondMs = 40, SecondToThirdMs = 100 });
+        engine.Update(Frame(0, true), true, true, true);
+        clock.Advance(50); engine.Update(Frame(50), true, true, true);
+        clock.Advance(50); engine.Update(Frame(100), true, true, true);
+        clock.Advance(40); engine.Update(Frame(140), true, true, true);
+        Assert.Equal(["A"], executor.History.Select(x => x.Key));
+        clock.Advance(99); engine.Update(Frame(239), true, true, true);
+        Assert.Single(executor.History);
+        clock.Advance(1); engine.Update(Frame(240), true, true, true);
+        Assert.Equal(["A", "S"], executor.History.Select(x => x.Key));
+    }
+
+    [Fact]
+    public void AllNullSlotsAndNoTurnKeysAreValidButSendNothing()
+    {
+        Assert.Equal(["null", "null", "null"], LiveKeySettings.Validate(["NULL", "null", "Null"], []));
+        var clock = new SimulatedClock(0); var executor = new SimulatedActionExecutor(clock);
+        var engine = new EarlyBuffPunishEngine(executor, clock, new EarlyPunishOptions
+        { ComboKeys = ["null", "null", "null"], FirstToSecondMs = 0, SecondToThirdMs = 0 });
+        engine.Update(Frame(0, true), true, true, true);
+        clock.Advance(50); engine.Update(Frame(50), true, true, true);
+        clock.Advance(50); engine.Update(Frame(100), true, true, true);
+        Assert.Empty(executor.History);
+        Assert.Equal(EarlyPunishState.Completed, engine.State);
+    }
+
+    [Fact]
+    public void CastTurnDefaultsToAllValidSpellsExceptExplicitExclusions()
+    {
+        var settings = new AutoCastTurnSettings { ExcludedSpellIds = [235] };
+        Assert.True(settings.Allows(131));
+        Assert.False(settings.Allows(235));
+        Assert.True(settings.Allows(241));
+        Assert.False(settings.Allows(0));
+        Assert.Throws<ArgumentException>(() => (settings with { ExcludedSpellIds = [235, 235] }).Validate());
+    }
+
+    [Fact]
+    public void OldExperimentalCharacterSettingsMigrateInMemoryWithoutOffensiveConsent()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "ninautoassist-migration-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            ConfigLoader.Save(path, new AutoAssistConfig { Live = new()
+            { PunishMode = LivePunishMode.AnchoredExperimental, AllowCounterAttackSequence = true } });
+            var before = File.ReadAllBytes(path);
+            var loaded = ConfigLoader.Load(path);
+            Assert.Equal(LivePunishMode.Legacy, loaded.Live.PunishMode);
+            Assert.False(loaded.Live.AllowCounterAttackSequence);
+            Assert.Equal(before, File.ReadAllBytes(path));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void CharacterSettingsMigrationDoesNotOverwritePreviousCharacter()
+    {
+        var temp = Path.Combine(Path.GetTempPath(), "ninautoassist-characters-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(temp);
+            var storage = new UserSettingsStorage(temp, temp, false);
+            ConfigLoader.Save(storage.ConfigPath, new AutoAssistConfig { Live = new() { PunishKeys = ["Z", "Q", "S"] } });
+            var a = storage.EnsureCharacterConfig("Kazetsuchi");
+            var b = storage.EnsureCharacterConfig("Another");
+            Assert.Equal(a, storage.EnsureCharacterConfig("kazetsuchi"));
+            ConfigLoader.Save(a, new AutoAssistConfig { Live = new() { PunishKeys = ["A", "null", "S"] } });
+            storage.EnsureCharacterConfig("Kazetsuchi");
+            Assert.Equal("null", ConfigLoader.Load(a).Live.PunishKeys[1]);
+            Assert.Equal("Z", ConfigLoader.Load(b).Live.PunishKeys[0]);
+            Assert.Equal("Z", ConfigLoader.Load(storage.ConfigPath).Live.PunishKeys[0]);
+        }
+        finally { Directory.Delete(temp, true); }
+    }
+
+    [Fact]
+    public void LocalTrialLogStaysNextToItsExecutableNotTheLaunchDirectory()
+    {
+        var storage = new UserSettingsStorage(@"C:\trial", @"C:\userdata", false);
+        Assert.Equal(Path.Combine(@"C:\trial", "logs/autoassist.log"), storage.ResolveLogPath("logs/autoassist.log"));
+        var installed = new UserSettingsStorage(@"C:\installed", @"C:\userdata", true);
+        Assert.Equal(Path.Combine(@"C:\userdata", "NinOnlineAutoAssist", "logs/autoassist.log"),
+            installed.ResolveLogPath("logs/autoassist.log"));
+    }
+
     [Theory]
     [InlineData("F12", "RightCtrl")]
     [InlineData("Up", "RightCtrl")]

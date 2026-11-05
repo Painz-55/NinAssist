@@ -6,6 +6,7 @@ using NinOnlineAutoAssist.Simulation;
 
 namespace NinOnlineAutoAssist.Tests;
 
+// Archived tests for a future separate experiment; excluded from the active solution.
 public sealed class AnchoredSubPunishTests
 {
     private static LiveFrame Frame(long at, double x, int? seconds, params string[] names) => new(
@@ -31,6 +32,50 @@ public sealed class AnchoredSubPunishTests
         Assert.Equal(new[] { "A", "Q", "S" }, sent);
         Assert.Equal(EarlyPunishState.Completed, engine.State);
     }
+
+    [Fact]
+    public void TargetlessComboContinuesAcrossModerateReadGapButNotF12()
+    {
+        var clock = new SimulatedClock(0); var sent = new List<string>();
+        var engine = new AnchoredSubPunishEngine(new Executor(k => { sent.Add(k); return ActionResult.Ok(); }), clock, Options);
+        engine.Update(Frame(0, 10, 5, SubstitutionBuffs.Normal), true, true, true);
+        clock.Advance(40); engine.Update(Frame(40, 12, null), true, true, true);
+        clock.Advance(120); engine.Update(Frame(160, 12, null), true, true, true);
+        clock.Advance(100); engine.Update(Frame(260, 12, null), true, true, true);
+        Assert.Equal(["A", "Q", "S"], sent);
+        engine.Reset(); sent.Clear();
+        clock.Advance(10); engine.Update(Frame(270, 10, 5, SubstitutionBuffs.Normal), true, true, true);
+        clock.Advance(40); engine.Update(Frame(310, 12, null), true, true, true);
+        clock.Advance(10); engine.Update(Frame(320, 12, null), true, true, false, "Emergency stop");
+        clock.Advance(150); engine.Update(Frame(470, 12, null), true, true, true);
+        Assert.Equal(["A"], sent);
+    }
+
+    [Fact]
+    public void GapWithBuffRearmsButNeverTreatsMissingSamplesAsEvidence()
+    {
+        var clock = new SimulatedClock(0); var sent = new List<string>();
+        var engine = new AnchoredSubPunishEngine(new Executor(k => { sent.Add(k); return ActionResult.Ok(); }), clock, Options);
+        engine.Update(Frame(0, 10, 5, SubstitutionBuffs.Normal), true, true, true);
+        clock.Advance(140); engine.Update(Frame(140, 12, 5, SubstitutionBuffs.Normal), true, true, true);
+        Assert.Empty(sent);
+        clock.Advance(40); engine.Update(Frame(180, 14, null), true, true, true);
+        Assert.Equal(["A"], sent); // new adjacent jump + early removal, not the lost 140ms interval
+    }
+
+    [Fact]
+    public void DisabledMiddleSlotDoesNotSendInput()
+    {
+        var clock = new SimulatedClock(0); var sent = new List<string>();
+        var engine = new AnchoredSubPunishEngine(new Executor(k => { sent.Add(k); return ActionResult.Ok(); }), clock,
+            Options with { ComboKeys = ["A", "null", "S"] });
+        engine.Update(Frame(0, 10, 5, SubstitutionBuffs.Normal), true, true, true);
+        clock.Advance(40); engine.Update(Frame(40, 12, null), true, true, true);
+        clock.Advance(10); engine.Update(Frame(50, 12, null), true, true, true);
+        clock.Advance(100); engine.Update(Frame(150, 12, null), true, true, true);
+        Assert.Equal(["A", "S"], sent);
+    }
+
 
     [Theory]
     [InlineData(true)]

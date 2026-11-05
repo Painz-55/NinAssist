@@ -4,7 +4,7 @@ using Microsoft.Diagnostics.Runtime;
 using NinOnlineAutoAssist.Core.Abstractions;
 using NinOnlineAutoAssist.Live;
 
-namespace NinOnlineAutoAssist.Diagnostics;
+namespace NinOnlineAutoAssist.Diagnostics; // Archived: not compiled in the shipping diagnostic tool.
 
 /// <summary>Local movement/buff calibration only. Never sends input or treats unknown fields as events.</summary>
 public static class SubAnchorTrace

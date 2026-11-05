@@ -20,6 +20,7 @@ internal sealed class LiveInputController : IOrientationController, IActionExecu
     private readonly DateTime[] _bindingTimes;
     private bool _faulted;
     private readonly string[] _comboKeys;
+    private readonly string[] _comboBindings;
     private readonly HashSet<ushort> _activationKeys;
     private readonly CombatAssistSettings _combatSettings;
     private readonly string? _toolSlot;
@@ -105,8 +106,13 @@ internal sealed class LiveInputController : IOrientationController, IActionExecu
             throw new InvalidOperationException("Movement bindings changed; revalidate reserved-key conflicts before enabling input.");
         var actionBindings = bindings.Where(b => b.Key == "Attack" || CombatBindingValidator.IsHotbarSlot(b.Key))
             .SelectMany(b => b.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (_comboKeys.Any(k => !actionBindings.Contains(k)))
+        if (_comboKeys.Any(k => !k.Equals(LiveKeySettings.Disabled, StringComparison.OrdinalIgnoreCase) && !actionBindings.Contains(k)))
             throw new InvalidOperationException("Cada tecla do combo precisa estar vinculada a Attack/Hotbar no jogo (sem modificadores).");
+        _comboBindings = _comboKeys.Select(key => key.Equals(LiveKeySettings.Disabled, StringComparison.OrdinalIgnoreCase)
+            ? "desabilitado" : string.Join("/", bindings.Where(b => (b.Key == "Attack" || CombatBindingValidator.IsHotbarSlot(b.Key)) &&
+                b.Value.Contains(key, StringComparer.OrdinalIgnoreCase)).Select(b => b.Key))).ToArray();
+        _log.Log(LogLevel.Info, "Bindings observados do combo: " + string.Join(" → ", _comboKeys.Select((key, i) =>
+            $"posição {i + 1} {key}={_comboBindings[i]}")) + "; posição não prova efeito da ação", EventOrigin.Observed);
         if (combatSettings.UseAttack && (!bindings.TryGetValue("Attack", out var attack) ||
             !attack.Contains(combatSettings.AttackKey, StringComparer.OrdinalIgnoreCase)))
             throw new InvalidOperationException("Configure a tecla de AA também no binding Attack do jogo.");
@@ -135,7 +141,8 @@ internal sealed class LiveInputController : IOrientationController, IActionExecu
         {
             "basic_attack" => 0, "followup_hotbar_Q" => 1, "followup_hotbar_S" => 2, _ => -1
         };
-        if (index < 0 || !key.Equals(_comboKeys[index], StringComparison.OrdinalIgnoreCase))
+        if (index < 0 || key.Equals(LiveKeySettings.Disabled, StringComparison.OrdinalIgnoreCase) ||
+            !key.Equals(_comboKeys[index], StringComparison.OrdinalIgnoreCase))
             return ActionResult.Rejected("Live action not configured");
         var virtualKey = LiveKeySettings.Keys[key];
         if (!_allowed(LiveInputKind.Punish)) return ActionResult.Rejected("Punish safety gate blocked");
@@ -144,7 +151,7 @@ internal sealed class LiveInputController : IOrientationController, IActionExecu
         var prepared = _prepareComboFacing();
         if (!prepared.Accepted) return prepared;
         if (!Tap(virtualKey, false, LiveInputKind.Punish)) return ActionResult.Rejected(LastInputReason);
-        LastActionText = $"{actionId} ({key}) — tecla enviada, efeito/acerto NÃO confirmado";
+        LastActionText = $"Combo posição {index + 1} ({key}, binding {_comboBindings[index]}) — tecla enviada, efeito/acerto NÃO confirmado";
         _log.Log(LogLevel.Info, LastActionText, EventOrigin.Executed);
         return ActionResult.Ok(LastActionText);
     }

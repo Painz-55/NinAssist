@@ -9,6 +9,7 @@ namespace NinOnlineAutoAssist.Tests;
 
 public sealed class AutoCastTurnTests
 {
+    private static AutoCastTurnSettings TestSettings(int lead = 100) => new() { LeadTimeMs = lead };
     private static CastObservation Idle => new(false, 0, 0, 0, 0);
     private static CastObservation Active(long remaining, int spell = 42, long start = 1000, long total = 1000) => new(true, spell, start, total, remaining);
     private static LiveFrame Frame(long at, CastObservation? cast, Direction facing = Direction.Down,
@@ -19,10 +20,23 @@ public sealed class AutoCastTurnTests
         }, at, 51, "Local", "Target", false, null, 0) { Cast = cast };
 
     [Fact]
-    public void AnySpellWithObservedCastIsMonitoredInFinalWindowWithoutActivationKey()
+    public void ExplicitlyExcludedSpellNeverRequestsTurn()
+    {
+        var clock = new SimulatedClock(0); var calls = 0;
+        var engine = new AutoCastTurnEngine(clock, TestSettings() with { ExcludedSpellIds = [42] }, _ => { calls++; return TurnResult.Ok(); });
+        engine.Update(Frame(0, Idle), true, false);
+        clock.Advance(100); engine.Update(Frame(100, Active(250)), true, false);
+        clock.Advance(100); engine.Update(Frame(200, Active(150)), true, false);
+        clock.Advance(100); engine.Update(Frame(300, Active(50)), true, false);
+        Assert.Equal(0, calls);
+        Assert.Contains("excluído", engine.Status);
+    }
+
+    [Fact]
+    public void AllValidObservedSpellsAreMonitoredInFinalWindow()
     {
         var clock = new SimulatedClock(0); var sent = new List<Direction>();
-        var engine = new AutoCastTurnEngine(clock, new(), d => { sent.Add(d); return TurnResult.Ok(); });
+        var engine = new AutoCastTurnEngine(clock, TestSettings(), d => { sent.Add(d); return TurnResult.Ok(); });
         engine.Update(Frame(0, Idle), true, false);
         clock.Advance(100); engine.Update(Frame(100, Active(1000, spell: 777)), true, false);
         for (var at = 200; at <= 1000; at += 100)
@@ -42,7 +56,7 @@ public sealed class AutoCastTurnTests
     public void CancelledOrInterruptedCastNeverTurnsWhenBarDisappears()
     {
         var clock = new SimulatedClock(0); var calls = 0;
-        var engine = new AutoCastTurnEngine(clock, new(), _ => { calls++; return TurnResult.Ok(); });
+        var engine = new AutoCastTurnEngine(clock, TestSettings(), _ => { calls++; return TurnResult.Ok(); });
         engine.Update(Frame(0, Idle), true, false);
         clock.Advance(100); engine.Update(Frame(100, Active(1000)), true, false);
         clock.Advance(100); engine.Update(Frame(200, Active(900)), true, false);
@@ -66,7 +80,7 @@ public sealed class AutoCastTurnTests
     public void UnsafeOrAmbiguousSequenceCannotDispatchLateTurn(string problem)
     {
         var clock = new SimulatedClock(0); var calls = 0;
-        var engine = new AutoCastTurnEngine(clock, new(), _ => { calls++; return TurnResult.Ok(); });
+        var engine = new AutoCastTurnEngine(clock, TestSettings(), _ => { calls++; return TurnResult.Ok(); });
         if (problem != "enabled-mid-cast") engine.Update(Frame(0, Idle), true, false);
         clock.Advance(100); engine.Update(Frame(100, Active(250)), true, false);
         clock.Advance(100);
@@ -92,7 +106,7 @@ public sealed class AutoCastTurnTests
     public void EndWindowUsesLatestTargetPositionAndNativeGateCanRecheckContext()
     {
         var clock = new SimulatedClock(0); LiveFrame? current = null; AutoCastTurnEngine? engine = null;
-        engine = new AutoCastTurnEngine(clock, new(), direction =>
+        engine = new AutoCastTurnEngine(clock, TestSettings(), direction =>
         {
             Assert.Equal(Direction.Right, direction); Assert.True(engine!.CanDispatch(current, clock.NowMs));
             Assert.False(engine.CanDispatch(current! with { Cast = Idle }, clock.NowMs));
@@ -114,7 +128,7 @@ public sealed class AutoCastTurnTests
     public void RefusedInputIsNotRepeatedAndAlreadyAlignedCastDoesNotSendKeys()
     {
         var clock = new SimulatedClock(0); var calls = 0;
-        var engine = new AutoCastTurnEngine(clock, new(), _ => { calls++; return TurnResult.Rejected("manual key held"); });
+        var engine = new AutoCastTurnEngine(clock, TestSettings(), _ => { calls++; return TurnResult.Rejected("manual key held"); });
         engine.Update(Frame(0, Idle), true, false);
         clock.Advance(100); engine.Update(Frame(100, Active(250)), true, false);
         clock.Advance(100); engine.Update(Frame(200, Active(150)), true, false);
@@ -132,7 +146,7 @@ public sealed class AutoCastTurnTests
     public void EstimatedTimeBetweenFreshReadsCanReachWindowButCannotReplayConsumedCast()
     {
         var clock = new SimulatedClock(0); var calls = 0;
-        var engine = new AutoCastTurnEngine(clock, new(), _ => { calls++; return TurnResult.Ok(); });
+        var engine = new AutoCastTurnEngine(clock, TestSettings(), _ => { calls++; return TurnResult.Ok(); });
         engine.Update(Frame(0, Idle), true, false);
         clock.Advance(100); engine.Update(Frame(100, Active(250)), true, false);
         clock.Advance(100); var sample = Frame(200, Active(150)); engine.Update(sample, true, false);
@@ -153,7 +167,7 @@ public sealed class AutoCastTurnTests
         Assert.False(Active(500, spell: 0).Valid);
         Assert.False(Active(500, start: 0).Valid);
         var clock = new SimulatedClock(0); var calls = 0;
-        var engine = new AutoCastTurnEngine(clock, new() { LeadTimeMs = 250 }, _ => { calls++; return TurnResult.Ok(); });
+        var engine = new AutoCastTurnEngine(clock, TestSettings(250), _ => { calls++; return TurnResult.Ok(); });
         engine.Update(Frame(0, Idle), true, false);
         clock.Advance(100); engine.Update(Frame(100, Active(200, total: 200)), true, false);
         clock.Advance(50); engine.Update(Frame(150, Active(150, total: 200)), true, false);
@@ -213,7 +227,7 @@ public sealed class AutoCastTurnTests
     public void TimingUsesObservationInstantWithoutDoubleSubtractingMemoryReadTime()
     {
         var clock = new SimulatedClock(0); var calls = 0;
-        var engine = new AutoCastTurnEngine(clock, new(), _ => { calls++; return TurnResult.Ok(); });
+        var engine = new AutoCastTurnEngine(clock, TestSettings(), _ => { calls++; return TurnResult.Ok(); });
         engine.Update(Frame(0, Idle), true, false);
         clock.Advance(100); engine.Update(Frame(100, Active(250)), true, false);
         clock.Advance(130);
@@ -230,7 +244,7 @@ public sealed class AutoCastTurnTests
     public void EndOfCastTurnSupportsAllFourCardinalDirections(Direction expected, double x, double y, Direction initial)
     {
         var clock = new SimulatedClock(0); var sent = new List<Direction>();
-        var engine = new AutoCastTurnEngine(clock, new(), d => { sent.Add(d); return TurnResult.Ok(); });
+        var engine = new AutoCastTurnEngine(clock, TestSettings(), d => { sent.Add(d); return TurnResult.Ok(); });
         engine.Update(Frame(0, Idle, initial, targetX: x, targetY: y), true, false);
         clock.Advance(100); engine.Update(Frame(100, Active(250), initial, targetX: x, targetY: y), true, false);
         clock.Advance(100); engine.Update(Frame(200, Active(150), initial, targetX: x, targetY: y), true, false);
@@ -242,7 +256,7 @@ public sealed class AutoCastTurnTests
     public void WalkingThatOverridesFacingIsCorrectedAgainUntilCastEnds()
     {
         var clock = new SimulatedClock(0); var sent = new List<Direction>();
-        var engine = new AutoCastTurnEngine(clock, new() { LeadTimeMs = 200 }, d => { sent.Add(d); return TurnResult.Ok(); });
+        var engine = new AutoCastTurnEngine(clock, TestSettings(200), d => { sent.Add(d); return TurnResult.Ok(); });
         engine.Update(Frame(0, Idle), true, false);
         clock.Advance(100); engine.Update(Frame(100, Active(400)), true, false);
         clock.Advance(150); engine.Update(Frame(250, Active(250)), true, false);
@@ -267,7 +281,7 @@ public sealed class AutoCastTurnTests
     public void InitiallyAlignedCastRemainsWatchedAndMovementCanTriggerFirstCorrectionLate()
     {
         var clock = new SimulatedClock(0); var calls = 0;
-        var engine = new AutoCastTurnEngine(clock, new(), _ => { calls++; return TurnResult.Ok(); });
+        var engine = new AutoCastTurnEngine(clock, TestSettings(), _ => { calls++; return TurnResult.Ok(); });
         engine.Update(Frame(0, Idle, Direction.Up), true, false);
         clock.Advance(100); engine.Update(Frame(100, Active(250), Direction.Up), true, false);
         clock.Advance(100); engine.Update(Frame(200, Active(150), Direction.Up), true, false);
@@ -281,7 +295,7 @@ public sealed class AutoCastTurnTests
     public void AlreadyOwnedTurnMayCoverDeadlineButCannotStartLateOrSurviveCancel()
     {
         var clock = new SimulatedClock(0); AutoCastTurnEngine? engine = null;
-        engine = new AutoCastTurnEngine(clock, new(), _ =>
+        engine = new AutoCastTurnEngine(clock, TestSettings(), _ =>
         {
             var aligned = Frame(300, Active(50), Direction.Up);
             Assert.True(engine!.CanMaintain(aligned, 300));
@@ -306,7 +320,7 @@ public sealed class AutoCastTurnTests
     public void FreshObservedDriftOrChangedAimEndsHoldToPermitAnotherCorrection()
     {
         var clock = new SimulatedClock(0); AutoCastTurnEngine? engine = null;
-        engine = new AutoCastTurnEngine(clock, new(), _ =>
+        engine = new AutoCastTurnEngine(clock, TestSettings(), _ =>
         {
             Assert.True(engine!.CanMaintain(Frame(300, Active(100)), 300)); // Give initial input time to be polled.
             Assert.True(engine.CanMaintain(Frame(340, Active(60)), 340));
@@ -325,7 +339,7 @@ public sealed class AutoCastTurnTests
     public void ReapplyingAfterRealHoldLeavesTimeForGameToObserveKeyUp()
     {
         var clock = new SimulatedClock(0); var calls = 0;
-        var engine = new AutoCastTurnEngine(clock, new() { LeadTimeMs = 200 }, _ =>
+        var engine = new AutoCastTurnEngine(clock, TestSettings(200), _ =>
         {
             if (++calls == 1) clock.Advance(60); // Model the adapter owning the key until a fresh drift sample.
             return TurnResult.Ok();

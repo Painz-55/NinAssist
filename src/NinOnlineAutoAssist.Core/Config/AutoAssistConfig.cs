@@ -8,6 +8,8 @@ using System.Text.Json.Serialization;
 namespace NinOnlineAutoAssist.Core.Config;
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
+// AnchoredExperimental is retained solely to read old per-character JSON safely.
+// The active factory rejects it; ConfigLoader migrates it to Legacy with consent OFF.
 public enum LivePunishMode { Legacy, AnchoredExperimental }
 
 /// <summary>
@@ -184,7 +186,10 @@ public static class ConfigLoader
         if (!File.Exists(path))
             return new AutoAssistConfig(); // safe defaults: modules and offensive input disabled
         var json = File.ReadAllText(path);
-        return JsonSerializer.Deserialize<AutoAssistConfig>(json, Json) ?? new AutoAssistConfig();
+        var loaded = JsonSerializer.Deserialize<AutoAssistConfig>(json, Json) ?? new AutoAssistConfig();
+        return loaded.Live.PunishMode == LivePunishMode.AnchoredExperimental
+            ? loaded with { Live = loaded.Live with { PunishMode = LivePunishMode.Legacy, AllowCounterAttackSequence = false } }
+            : loaded;
     }
 
     public static void SaveDefault(string path)

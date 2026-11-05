@@ -79,6 +79,16 @@ public static class SignedProfileCatalog
                 throw new InvalidOperationException("Duplicate approved input kind");
             if (!element.GetProperty("ActuationValidated").GetBoolean() && actions.GetArrayLength() != 0)
                 throw new InvalidOperationException("Read-only profile cannot approve input");
+            var modes = element.TryGetProperty("ValidatedAttackModes", out var modeList) ? modeList : default;
+            if (modes.ValueKind != JsonValueKind.Undefined && (modes.ValueKind != JsonValueKind.Array ||
+                modes.GetArrayLength() > 3 || modes.EnumerateArray().Any(m => m.ValueKind != JsonValueKind.String ||
+                    m.GetString() is not ("Melee" or "Fan" or "HisuyFan")) ||
+                modes.EnumerateArray().Select(m => m.GetString()).Distinct().Count() != modes.GetArrayLength()))
+                throw new InvalidOperationException("Invalid approved attack modes");
+            if (modes.ValueKind == JsonValueKind.Array && modes.GetArrayLength() > 0 &&
+                (!element.GetProperty("ActuationValidated").GetBoolean() ||
+                 !actions.EnumerateArray().Any(a => a.GetString() == "Attack")))
+                throw new InvalidOperationException("Attack mode requires explicit Attack approval");
             // No inherited obfuscated defaults: all names are explicitly present in the signed payload.
             match = (element.Deserialize<GameMemoryProfile>() ?? throw new InvalidOperationException("Invalid signed profile"))
                 with { ExternalProfile = true };
