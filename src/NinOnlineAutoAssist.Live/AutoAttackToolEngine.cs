@@ -11,7 +11,7 @@ public static class CombatGeometry
 {
     public static Direction AttackDirection(LiveFrame frame, CombatAssistSettings settings)
     {
-        if (settings.AttackMode == AutoAttackMode.Melee ||
+        if (settings.AttackMode is AutoAttackMode.Melee or AutoAttackMode.Fan ||
             frame.Snapshot.Target is not { IsAlive: true, IsTargeted: true } target || !frame.Snapshot.Player.IsAlive)
             return Direction.None;
         var facing = frame.Snapshot.Player.Facing;
@@ -40,9 +40,11 @@ public static class CombatGeometry
         if (!double.IsFinite(dx) || !double.IsFinite(dy)) return false;
         if (action == CombatAction.Attack && settings.AttackMode == AutoAttackMode.Melee)
             return dx * dx + dy * dy <= settings.WeaponRadius * settings.WeaponRadius;
-        var (range, width) = action == CombatAction.Tool ? (settings.ToolRange, settings.ToolHalfWidth) : settings.AttackMode switch
+        // Fan comum uses the exact same straight, facing-dependent corridor as shuriken/Tool.
+        // Only the dispatched action/key/timer differs; Hisuy keeps its separate geometry.
+        var (range, width) = action == CombatAction.Tool || settings.AttackMode == AutoAttackMode.Fan
+            ? (settings.ToolRange, settings.ToolHalfWidth) : settings.AttackMode switch
         {
-            AutoAttackMode.Fan => (settings.FanRange, settings.FanHalfWidth),
             AutoAttackMode.HisuyFan => (settings.HisuyFanRange, settings.HisuyFanHalfWidth),
             _ => (double.NaN, double.NaN)
         };
@@ -58,7 +60,7 @@ public static class CombatGeometry
     public static string DescribeAttack(CombatAssistSettings settings) => settings.AttackMode switch
     {
         AutoAttackMode.Melee => $"Melee radial <= {settings.WeaponRadius} tiles",
-        AutoAttackMode.Fan => $"Fan frontal <= {settings.FanRange}, meia-largura {settings.FanHalfWidth} tiles",
+        AutoAttackMode.Fan => $"Fan reto como Tool <= {settings.ToolRange}, meia-largura {settings.ToolHalfWidth} tiles (tecla AA)",
         AutoAttackMode.HisuyFan => $"Hisuy Fan frontal <= {settings.HisuyFanRange}, meia-largura {settings.HisuyFanHalfWidth} tiles",
         _ => "AA inválido/bloqueado"
     };
@@ -90,15 +92,17 @@ public sealed class AutoAttackToolEngine
         if (now < frame.CapturedAtMs || now - frame.CapturedAtMs > 500 || frame.ReadDurationMs is < 0 or > 500)
         { Status = "AA/Tool: dados antigos"; return; }
         if (higherPriorityBusy) { Status = "AA/Tool: aguardando SubPunish/giro"; return; }
-        var attackDirection = _settings.AttackMode == AutoAttackMode.Melee ? Direction.None : CombatGeometry.AttackDirection(frame, _settings);
+        var attackDirection = _settings.AttackMode is AutoAttackMode.Melee or AutoAttackMode.Fan
+            ? Direction.None : CombatGeometry.AttackDirection(frame, _settings);
         var attack = attackAllowed && _settings.UseAttack && (_lastAttack is null || now - _lastAttack >= _settings.AttackIntervalMs) &&
-            (_settings.AttackMode == AutoAttackMode.Melee ? CombatGeometry.InRange(frame, CombatAction.Attack, _settings)
+            (_settings.AttackMode is AutoAttackMode.Melee or AutoAttackMode.Fan
+                ? CombatGeometry.InRange(frame, CombatAction.Attack, _settings)
                 : attackDirection != Direction.None && _prepareAttack is not null);
         var tool = toolAllowed && _settings.UseTool && (_lastTool is null || now - _lastTool >= _settings.ToolIntervalMs) &&
             CombatGeometry.InRange(frame, CombatAction.Tool, _settings);
         if (!attack && !tool) { Status = "AA/Tool: aguardando intervalo/alcance/alinhamento frontal"; return; }
         var selected = tool && (!attack || _preferTool) ? CombatAction.Tool : CombatAction.Attack;
-        if (selected == CombatAction.Attack && _settings.AttackMode != AutoAttackMode.Melee)
+        if (selected == CombatAction.Attack && _settings.AttackMode == AutoAttackMode.HisuyFan)
         {
             var prepared = _prepareAttack!(frame, attackDirection);
             if (!prepared.Accepted) { Status = $"AA {_settings.AttackMode}: {prepared.Reason}"; return; }

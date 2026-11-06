@@ -42,7 +42,7 @@ public sealed class SignedProfileCatalogTests
         Assert.True(updated.ActuationValidated);
         Assert.Equal(7, updated.ValidatedInputKinds.Length);
         Assert.True(updated.ApprovesAttackMode("Melee"));
-        Assert.False(updated.ApprovesAttackMode("Fan"));
+        Assert.True(updated.ApprovesAttackMode("Fan"));
         Assert.False(updated.ApprovesAttackMode("HisuyFan"));
         Assert.True(updated.PunishComboValidated);
         Assert.True(updated.PunishComboRequiresTarget);

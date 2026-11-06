@@ -17,18 +17,18 @@ public sealed class FanAttackTests
         ToolRange = 4, ToolHalfWidth = 0.3, AttackIntervalMs = 200 };
 
     [Theory]
-    [InlineData(AutoAttackMode.Fan, Direction.Up, 0.5, -2.5)]
-    [InlineData(AutoAttackMode.Fan, Direction.Down, 0.5, 2.5)]
-    [InlineData(AutoAttackMode.Fan, Direction.Left, -2.5, 0.5)]
-    [InlineData(AutoAttackMode.Fan, Direction.Right, 2.5, 0.5)]
+    [InlineData(AutoAttackMode.Fan, Direction.Up, 0.2, -2.5)]
+    [InlineData(AutoAttackMode.Fan, Direction.Down, 0.2, 2.5)]
+    [InlineData(AutoAttackMode.Fan, Direction.Left, -2.5, 0.2)]
+    [InlineData(AutoAttackMode.Fan, Direction.Right, 2.5, 0.2)]
     [InlineData(AutoAttackMode.HisuyFan, Direction.Up, 0.9, -2.5)]
     [InlineData(AutoAttackMode.HisuyFan, Direction.Down, 0.9, 2.5)]
     [InlineData(AutoAttackMode.HisuyFan, Direction.Left, -2.5, 0.9)]
     [InlineData(AutoAttackMode.HisuyFan, Direction.Right, 2.5, 0.9)]
-    public void RangedAttackUsesItsOwnForwardCorridorInAllFourDirections(AutoAttackMode mode, Direction facing, double x, double y)
+    public void RangedAttackUsesForwardCorridorInAllFourDirections(AutoAttackMode mode, Direction facing, double x, double y)
     {
         Assert.True(CombatGeometry.InRange(Frame(x, y, facing), CombatAction.Attack, Settings(mode)));
-        Assert.False(CombatGeometry.InRange(Frame(x, y, facing), CombatAction.Tool, Settings(mode)));
+        Assert.Equal(mode == AutoAttackMode.Fan, CombatGeometry.InRange(Frame(x, y, facing), CombatAction.Tool, Settings(mode)));
     }
 
     [Theory]
@@ -41,11 +41,13 @@ public sealed class FanAttackTests
     }
 
     [Fact]
-    public void FanReachesFartherAndHisuyHasItsOwnWiderShorterBand()
+    public void FanUsesExactToolBandAndHisuyHasItsOwnBand()
     {
-        Assert.True(CombatGeometry.InRange(Frame(6, 0.6), CombatAction.Attack, Settings(AutoAttackMode.Fan)));
-        Assert.False(CombatGeometry.InRange(Frame(6.01, 0), CombatAction.Attack, Settings(AutoAttackMode.Fan)));
-        Assert.False(CombatGeometry.InRange(Frame(2, 0.61), CombatAction.Attack, Settings(AutoAttackMode.Fan)));
+        var fan = Settings(AutoAttackMode.Fan);
+        foreach (var frame in new[] { Frame(4, 0.3), Frame(4.01, 0), Frame(2, 0.31), Frame(-1, 0), Frame(2, 0, Direction.None) })
+            Assert.Equal(CombatGeometry.InRange(frame, CombatAction.Tool, fan), CombatGeometry.InRange(frame, CombatAction.Attack, fan));
+        Assert.False(CombatGeometry.InRange(Frame(6, 0), CombatAction.Attack, fan));
+        Assert.True(CombatGeometry.InRange(Frame(4, 0.3), CombatAction.Attack, fan with { FanRange = 1, FanHalfWidth = 0.01 }));
         Assert.True(CombatGeometry.InRange(Frame(3, 1), CombatAction.Attack, Settings(AutoAttackMode.HisuyFan)));
         Assert.False(CombatGeometry.InRange(Frame(3.01, 0), CombatAction.Attack, Settings(AutoAttackMode.HisuyFan)));
         Assert.False(CombatGeometry.InRange(Frame(2, 1.01), CombatAction.Attack, Settings(AutoAttackMode.HisuyFan)));
@@ -70,22 +72,20 @@ public sealed class FanAttackTests
         var engine = new AutoAttackToolEngine(clock, Settings(AutoAttackMode.Fan) with { UseTool = false }, (action, key) =>
         { sent.Add((action, key)); return ActionResult.Ok(); }, (frame, desired) =>
             frame.Snapshot.Player.Facing == desired ? ActionResult.Ok() : ActionResult.Deferred("aguardando giro"));
-        engine.Update(Frame(5, 0), true, false);
-        clock.Advance(100); engine.Update(Frame(5, 0, at: 100), true, false);
+        engine.Update(Frame(3, 0), true, false);
+        clock.Advance(100); engine.Update(Frame(3, 0, at: 100), true, false);
         Assert.Single(sent);
-        clock.Advance(100); engine.Update(Frame(5, 0, at: 200), true, false);
+        clock.Advance(100); engine.Update(Frame(3, 0, at: 200), true, false);
         Assert.Equal(new[] { (CombatAction.Attack, "A"), (CombatAction.Attack, "A") }, sent);
     }
 
-    [Theory]
-    [InlineData(AutoAttackMode.Fan)]
-    [InlineData(AutoAttackMode.HisuyFan)]
-    public void RangedAttackTurnsFirstAndWaitsForObservedFacing(AutoAttackMode mode)
+    [Fact]
+    public void HisuyAttackTurnsFirstAndWaitsForObservedFacing()
     {
         var clock = new SimulatedClock(100);
         var history = new List<string>();
         long? turnedAt = null;
-        var engine = new AutoAttackToolEngine(clock, Settings(mode) with { UseTool = false }, (action, key) =>
+        var engine = new AutoAttackToolEngine(clock, Settings(AutoAttackMode.HisuyFan) with { UseTool = false }, (action, key) =>
         { history.Add(key); return ActionResult.Ok(); }, (frame, desired) =>
         {
             if (turnedAt is { } at && frame.CapturedAtMs <= at) return ActionResult.Deferred("nova leitura");
@@ -107,7 +107,7 @@ public sealed class FanAttackTests
     {
         var fan = Settings(AutoAttackMode.Fan) with { UseTool = false };
         Assert.Equal(Direction.None, CombatGeometry.AttackDirection(Frame(2, 2), fan));
-        Assert.Equal(Direction.Left, CombatGeometry.AttackDirection(Frame(-2, 0), fan));
+        Assert.Equal(Direction.None, CombatGeometry.AttackDirection(Frame(-2, 0), fan));
         var sent = new List<string>();
         var engine = new AutoAttackToolEngine(new SimulatedClock(0), fan, (action, key) =>
         { sent.Add(key); return ActionResult.Ok(); }, (_, _) => ActionResult.Rejected("giro bloqueado"));
@@ -121,13 +121,14 @@ public sealed class FanAttackTests
     }
 
     [Fact]
-    public void FanWithoutTurnPreparationFailsClosedEvenWhenAlreadyFacingTarget()
+    public void FanLikeToolDoesNotRequireTurnPreparationButNeverAttacksBehind()
     {
         var sent = new List<string>();
         var engine = new AutoAttackToolEngine(new SimulatedClock(0), Settings(AutoAttackMode.Fan) with { UseTool = false },
             (_, key) => { sent.Add(key); return ActionResult.Ok(); });
         engine.Update(Frame(2, 0), true, false);
-        Assert.Empty(sent);
+        engine.Update(Frame(-2, 0), true, false);
+        Assert.Equal(new[] { "A" }, sent);
     }
 
     [Fact]

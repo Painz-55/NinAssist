@@ -230,7 +230,7 @@ public sealed class Form1 : Form
         _allowCombat = new CheckBox { Text = "AUTORIZAR AA + TOOL automáticos (sem tecla segurada)", Dock = DockStyle.Fill, ForeColor = Warn };
         _allowCombat.CheckedChanged += (_, _) => { _ctx?.SetCombatAuthorized(_allowCombat.Checked); RefreshStatus(); };
         rightPanel.Controls.Add(_allowCombat, 0, 4);
-        rightPanel.Controls.Add(new Label { Text = "SUB: giro automático durante buff/+1s; combo HEURÍSTICO.\nAA: Melee radial ou Fan/Hisuy frontal. TOOL: faixa frontal própria.\nFOLLOW: ON + tecla segurada + caminho conhecido. F12 desliga tudo.\nFeche o chat; acertos/cooldowns/armadilhas invisíveis não são garantidos.", Dock = DockStyle.Fill, ForeColor = Dim }, 0, 5);
+        rightPanel.Controls.Add(new Label { Text = "SUB: giro automático durante buff/+1s; combo HEURÍSTICO.\nAA: Melee radial ou Fan reto como Tool, usando tecla AA; Hisuy frontal.\nFOLLOW: ON + tecla segurada + caminho conhecido. F12 desliga tudo.\nFeche o chat; acertos/cooldowns/armadilhas invisíveis não são garantidos.", Dock = DockStyle.Fill, ForeColor = Dim }, 0, 5);
         var settings = new Button { Text = "TECLAS / TIMERS SUB", Width = 210, Height = 32, BackColor = PanelAlt, ForeColor = Fg };
         settings.Click += (_, _) => ConfigureKeys();
         var combatSettings = new Button { Text = "AA / TOOL / FOLLOW / STAMINA", Width = 240, Height = 32, BackColor = PanelAlt, ForeColor = Fg };

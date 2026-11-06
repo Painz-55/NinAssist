@@ -42,28 +42,28 @@ internal sealed class CombatAssistForm : Form
         content.Controls.Add(useAA); content.Controls.Add(useTool);
         var attack = Key("Tecla do Auto Ataque (AA)", settings.AttackKey, false);
         var attackMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
-        attackMode.Items.AddRange(new object[] { "Melee (radial)", "Fan (frontal)", "Hisuy Fan (frontal)" });
+        attackMode.Items.AddRange(new object[] { "Melee (radial)", "Fan (reto como shuriken)", "Hisuy Fan (frontal)" });
         attackMode.SelectedIndex = Enum.IsDefined(settings.AttackMode) ? (int)settings.AttackMode : -1;
         Row("Tipo de arma / geometria do AA", attackMode);
         var radius = Number("Raio da arma — AA em volta do personagem", (decimal)settings.WeaponRadius, 0.1m, 30, 2);
-        var fanRange = Number("Fan: alcance frontal (tiles)", (decimal)settings.FanRange, 0.1m, 30, 2);
-        var fanWidth = Number("Fan: meia-largura frontal (tiles)", (decimal)settings.FanHalfWidth, 0.01m, 10, 2);
+        var fanRange = Number("Fan legado: alcance (não usado no modo reto)", (decimal)settings.FanRange, 0.1m, 30, 2);
+        var fanWidth = Number("Fan legado: largura (não usada no modo reto)", (decimal)settings.FanHalfWidth, 0.01m, 10, 2);
         var hisuyRange = Number("Hisuy Fan: alcance frontal (tiles)", (decimal)settings.HisuyFanRange, 0.1m, 30, 2);
         var hisuyWidth = Number("Hisuy Fan: meia-largura frontal (tiles)", (decimal)settings.HisuyFanHalfWidth, 0.01m, 10, 2);
         void RefreshAttackMode()
         {
             radius.Enabled = attackMode.SelectedIndex == 0;
-            fanRange.Enabled = fanWidth.Enabled = attackMode.SelectedIndex == 1;
+            fanRange.Enabled = fanWidth.Enabled = false;
             hisuyRange.Enabled = hisuyWidth.Enabled = attackMode.SelectedIndex == 2;
         }
         attackMode.SelectedIndexChanged += (_, _) => RefreshAttackMode();
         RefreshAttackMode();
         content.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(590, 0),
-            Text = "Fan/Hisuy Fan usam AA para frente, não ThrowWeapon. Valores iniciais são referências NÃO calibradas: ajuste ao alcance/largura da sua arma. Meia-largura = metade da faixa total. O modo é escolhido manualmente, sem detectar arma equipada." });
+            Text = "Fan comum usa exatamente a faixa reta e a direção da shuriken/Tool (alcance/largura abaixo), mas envia a tecla e usa o intervalo de AA; não gira sozinho. Hisuy Fan mantém sua faixa própria e segue bloqueado nesta build. Sem detectar arma equipada ou garantir acerto." });
         var aaDelay = Number("Intervalo entre tentativas de AA (ms)", settings.AttackIntervalMs, 80, 60000);
         var tool = Key("Tecla do slot da shuriken/Tool na hotbar", settings.ToolKey, false);
-        var range = Number("Alcance frontal máximo da Tool (tiles)", (decimal)settings.ToolRange, 0.1m, 30, 2);
-        var halfWidth = Number("Meia-largura da faixa frontal da Tool (tiles)", (decimal)settings.ToolHalfWidth, 0.01m, 1, 2);
+        var range = Number("Alcance reto da Tool e Fan (tiles)", (decimal)settings.ToolRange, 0.1m, 30, 2);
+        var halfWidth = Number("Meia-largura reta da Tool e Fan (tiles)", (decimal)settings.ToolHalfWidth, 0.01m, 1, 2);
         var toolDelay = Number("Intervalo entre tentativas de Tool (ms)", settings.ToolIntervalMs, 80, 60000);
         var hold = Key("Follow: tecla que deve ficar pressionada", settings.FollowHoldKey, true);
         var stop = Number("Follow: distância de parada (tiles)", (decimal)settings.FollowStopDistance, 0.5m, 30, 2);
