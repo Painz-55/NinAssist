@@ -22,6 +22,8 @@ dotnet run --project src/NinOnlineAutoAssist.ProfileSigner -- compatibility/pack
 
 Enquanto a build **já validada** ainda estiver instalada, capture uma vez os metadados associados ao par exato de DLLs e ao perfil assinado, fora do repositório:
 
+Fluxo econômico: use `./scripts/Passive-GameUpdate.ps1 -Mode Capture -GameDirectory 'CAMINHO_DA_BUILD_ASSINADA'` **antes** de um update (apenas hashes com perfil assinado). Após o update, use `./scripts/Passive-GameUpdate.ps1 -Mode Analyze -GameDirectory 'CAMINHO_NOVO' -ProcessId <PID>`; o PID é opcional. O script compara os hashes, gera candidatos estáticos e, se houver PID, leitura passiva em uma pasta privada fora do Git. Não adivinha campos, não envia teclas, não assina nem publica. Se não houver DLLs da build anterior nem baseline guardado, a captura falha fechada: obter baseline legítimo antes de comparar. **Somente após revisar o diagnóstico**, preparar um único build completo para o usuário testar todos os módulos juntos e trazer feedback consolidado; não exigir testes separados por módulo por padrão. Sem confirmação explícita, resultados do teste integrado não viram alegações de acerto/efeito.
+
 ```powershell
 dotnet run --project src/NinOnlineAutoAssist.Diagnostics -- --capture-profile-baseline 'CAMINHO\NinOnline.dll' compatibility/profiles.json | Set-Content -Encoding utf8 'CAMINHO_FORA_DO_GIT\baseline.json'
 ```
