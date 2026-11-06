@@ -24,6 +24,28 @@ public sealed class SignedProfileCatalogTests
         Assert.False(current.ApprovesAttackMode("HisuyFan"));
         Assert.Contains("Tool", current.ValidatedInputKinds);
         Assert.Contains("Punish", current.ValidatedInputKinds);
+        Assert.Null(SignedProfileCatalog.VerifyAndSelect(payload, signature, SignedProfileCatalog.PublicKey,
+            "B384E2E1EE84A5AC0CB86AAE4F9A4A0A9D41C4F3E68195F9AC434656C9B05A60",
+            "CC1E2845C8C7F23E85D2A92A9CE0B5425DC954CA3BE5D514743FB02A0BD1CA9E"));
+    }
+
+    [Fact]
+    public void BundledNewProfileRequiresUpdatedExecutableAndKeepsUnvalidatedModesBlocked()
+    {
+        var directory = Path.Combine(AppContext.BaseDirectory, "compatibility");
+        var payload = File.ReadAllBytes(Path.Combine(directory, "package-profiles.json"));
+        var signature = Convert.FromBase64String(File.ReadAllText(Path.Combine(directory, "package-profiles.json.sig")).Trim());
+        var updated = SignedProfileCatalog.VerifyAndSelect(payload, signature, SignedProfileCatalog.PublicKey,
+            "B384E2E1EE84A5AC0CB86AAE4F9A4A0A9D41C4F3E68195F9AC434656C9B05A60",
+            "CC1E2845C8C7F23E85D2A92A9CE0B5425DC954CA3BE5D514743FB02A0BD1CA9E");
+        Assert.NotNull(updated);
+        Assert.True(updated.ActuationValidated);
+        Assert.Equal(7, updated.ValidatedInputKinds.Length);
+        Assert.True(updated.ApprovesAttackMode("Melee"));
+        Assert.False(updated.ApprovesAttackMode("Fan"));
+        Assert.False(updated.ApprovesAttackMode("HisuyFan"));
+        Assert.True(updated.PunishComboValidated);
+        Assert.True(updated.PunishComboRequiresTarget);
     }
 
     private static (byte[] Payload, byte[] Signature, string PublicKey) Sign(object document)
@@ -88,6 +110,31 @@ public sealed class SignedProfileCatalogTests
             p.Sha256, p.CommonSha256)!;
         Assert.Equal(["Stamina"], found.ValidatedInputKinds);
         Assert.DoesNotContain("Attack", found.ValidatedInputKinds);
+    }
+
+    [Fact]
+    public void SignedSubTurnTrialCanExplicitlyBlockComboWithoutChangingOlderProfiles()
+    {
+        var p = GameMemoryProfile.Updated20261104;
+        var signed = Sign(new { schema = 1, profiles = new[] { p with
+        {
+            ActuationValidated = true, ValidatedInputKinds = ["Turning", "Punish"],
+            PunishComboValidated = false
+        } } });
+        var found = SignedProfileCatalog.VerifyAndSelect(signed.Payload, signed.Signature, signed.PublicKey,
+            p.Sha256, p.CommonSha256)!;
+        Assert.False(found.PunishComboValidated);
+        Assert.Null(p.PunishComboValidated);
+        var targeted = Sign(new { schema = 1, profiles = new[] { p with
+        {
+            ActuationValidated = true, ValidatedInputKinds = ["Turning", "Punish"],
+            PunishComboValidated = true, PunishComboRequiresTarget = true
+        } } });
+        var combo = SignedProfileCatalog.VerifyAndSelect(targeted.Payload, targeted.Signature, targeted.PublicKey,
+            p.Sha256, p.CommonSha256)!;
+        Assert.True(combo.PunishComboValidated);
+        Assert.True(combo.PunishComboRequiresTarget);
+        Assert.Null(p.PunishComboRequiresTarget);
     }
 
     [Fact]

@@ -9,6 +9,10 @@ public sealed record GameMemoryProfile
     public bool ExternalProfile { get; init; }
     public bool ActuationValidated { get; init; } = true;
     public string[] ValidatedInputKinds { get; init; } = [];
+    // Null preserves existing signed profiles; false permits a local Substitution-turn trial without combo dispatch.
+    public bool? PunishComboValidated { get; init; }
+    // New-build trials may require one stable selected consenting player; null preserves legacy targetless behavior.
+    public bool? PunishComboRequiresTarget { get; init; }
     // A generic Attack approval is insufficient: modes have different targeting and input semantics.
     public string[] ValidatedAttackModes { get; init; } = [];
     public bool ApprovesAttackMode(string mode) => ActuationValidated &&

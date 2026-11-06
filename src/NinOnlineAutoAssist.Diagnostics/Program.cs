@@ -20,6 +20,36 @@ if (args.Length == 3 && args[0] == "--watch-local-projectiles" && int.TryParse(a
 if (args.Length == 2 && args[0] == "--build-schema" && int.TryParse(args[1], out var schemaPid)) return BuildSchemaProbe.Run(schemaPid);
 if (args.Length == 2 && args[0] == "--profile-candidates" && int.TryParse(args[1], out var candidatePid))
     return ProfileCandidateProbe.Run(candidatePid);
+if (args.Length == 3 && args[0] == "--identify-player-candidates" && int.TryParse(args[1], out var identityPid))
+    return ProfileCandidateProbe.Identify(identityPid, args[2]);
+if (args.Length == 3 && args[0] == "--trace-player-movement" && int.TryParse(args[1], out var movementPid))
+    return PlayerMovementProbe.Run(movementPid, args[2]);
+if (args.Length == 3 && args[0] == "--check-player-freshness" && int.TryParse(args[1], out var freshnessPid))
+    return PlayerMovementProbe.Run(freshnessPid, args[2], shortCheck: true);
+if (args.Length is 3 or 4 && args[0] == "--trace-cast-candidates" && int.TryParse(args[1], out var castCandidatePid) &&
+    (args.Length == 3 || int.TryParse(args[3], out _)))
+    return CastCandidateProbe.Run(castCandidatePid, args[2], args.Length == 4 ? int.Parse(args[3]) : 30);
+if (args.Length == 3 && args[0] == "--profile-details" && int.TryParse(args[1], out var detailsPid))
+    return ProfileDetailsProbe.Run(detailsPid, args[2]);
+if (args.Length == 3 && args[0] == "--watch-target-candidates" && int.TryParse(args[1], out var targetPid))
+    return TargetCandidateProbe.Run(targetPid, args[2]);
+if (args.Length == 4 && args[0] == "--calibration-snapshot" && int.TryParse(args[1], out var calibrationPid))
+{
+    var profile = JsonSerializer.Deserialize<GameMemoryProfile>(File.ReadAllText(args[3]))
+        ?? throw new InvalidOperationException("Missing calibration profile");
+    if (profile.ActuationValidated || profile.ValidatedInputKinds.Length != 0 || profile.ValidatedAttackModes.Length != 0)
+        throw new InvalidOperationException("Calibration must explicitly disable all input");
+    using var provider = new ReadOnlyGameStateProvider(calibrationPid, args[2], new SystemMonotonicClock(),
+        profile with { ExternalProfile = true }) { ReadNavigation = true, ReadMapPlayers = true };
+    for (var i = 0; i < 12; i++) { provider.GetSnapshot(); Thread.Sleep(100); }
+    Console.WriteLine(JsonSerializer.Serialize(new { provider.Status, provider.Frame, provider.NavigationStatus,
+        Navigation = provider.Navigation is { } n ? new { n.Map, n.Width, n.Height, n.DynamicHazardsKnown } : null,
+        provider.MapPlayersStatus, MapPlayers = provider.MapPlayers?.Players.Count }));
+    return provider.Frame is null ? 1 : 0;
+}
+if (args.Length == 5 && args[0] == "--calibration-watch" && int.TryParse(args[1], out var watchCalibrationPid) &&
+    int.TryParse(args[4], out var watchCalibrationSeconds))
+    return CalibrationWatch.Run(watchCalibrationPid, args[2], args[3], watchCalibrationSeconds);
 if (args.Length == 4 && args[0] == "--signed-profile-snapshot" && int.TryParse(args[1], out var signedPid))
 {
     using var process = System.Diagnostics.Process.GetProcessById(signedPid);
@@ -41,6 +71,10 @@ if (args.Length == 4 && args[0] == "--signed-profile-snapshot" && int.TryParse(a
     return provider.Frame is null ? 1 : 0;
 }
 if (args.Length == 2 && args[0] == "--field-metadata") return FieldMetadata.Run(args[1]);
+if (args.Length == 5 && args[0] == "--profile-schema-diff")
+    return ProfileSchemaDiff.Run(args[1], args[2], args[3], args[4]);
+if (args.Length == 3 && args[0] == "--capture-profile-baseline")
+    return ProfileSchemaDiff.Capture(args[1], args[2]);
 if (args.Length == 2 && args[0] == "--common-enums") return FieldMetadata.Run(args[1], enums: true);
 if (args.Length == 1 && args[0] == "--hold-timing")
 {

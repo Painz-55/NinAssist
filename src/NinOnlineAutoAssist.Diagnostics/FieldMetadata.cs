@@ -7,6 +7,8 @@ namespace NinOnlineAutoAssist.Diagnostics;
 
 public sealed class FieldMetadata : ISignatureTypeProvider<string, object?>
 {
+    public sealed record FieldEntry(string Name, string Type);
+    public sealed record TypeEntry(string Name, FieldEntry[] Fields);
     private static string Full(MetadataReader r, TypeDefinitionHandle h) { var t = r.GetTypeDefinition(h); return r.GetString(t.Namespace) + "." + r.GetString(t.Name); }
     public string GetTypeFromDefinition(MetadataReader r, TypeDefinitionHandle h, byte k) => Full(r, h);
     public string GetTypeFromReference(MetadataReader r, TypeReferenceHandle h, byte k) { var t = r.GetTypeReference(h); return r.GetString(t.Namespace) + "." + r.GetString(t.Name); }
@@ -25,8 +27,9 @@ public sealed class FieldMetadata : ISignatureTypeProvider<string, object?>
 
     public static int Run(string path, bool enums = false)
     {
+        if (!enums) { Console.WriteLine(JsonSerializer.Serialize(ReadSchema(path))); return 0; }
         using var stream = File.OpenRead(path); using var pe = new PEReader(stream);
-        var md = pe.GetMetadataReader(); var provider = new FieldMetadata();
+        var md = pe.GetMetadataReader();
         if (enums)
         {
             var values = md.TypeDefinitions.Select(h => md.GetTypeDefinition(h))
@@ -36,10 +39,18 @@ public sealed class FieldMetadata : ISignatureTypeProvider<string, object?>
                         Hex = Convert.ToHexString(md.GetBlobBytes(md.GetConstant(f.GetDefaultValue()).Value)) }).ToArray() }).ToArray();
             Console.WriteLine(JsonSerializer.Serialize(values)); return 0;
         }
-        var types = md.TypeDefinitions.Select(h => new { Handle = h, Type = md.GetTypeDefinition(h) })
+        return 0;
+    }
+
+    public static TypeEntry[] ReadSchema(string path)
+    {
+        using var stream = File.OpenRead(path);
+        using var pe = new PEReader(stream);
+        var md = pe.GetMetadataReader();
+        var provider = new FieldMetadata();
+        return md.TypeDefinitions.Select(h => new { Handle = h, Type = md.GetTypeDefinition(h) })
             .Where(t => t.Type.GetFields().Count >= 80)
-            .Select(t => new { Name = Full(md, t.Handle), Fields = t.Type.GetFields().Select(h => md.GetFieldDefinition(h))
-                .Select(f => new { Name = md.GetString(f.Name), Type = f.DecodeSignature(provider, (object?)null) }).ToArray() }).ToArray();
-        Console.WriteLine(JsonSerializer.Serialize(types)); return 0;
+            .Select(t => new TypeEntry(Full(md, t.Handle), t.Type.GetFields().Select(h => md.GetFieldDefinition(h))
+                .Select(f => new FieldEntry(md.GetString(f.Name), f.DecodeSignature(provider, (object?)null))).ToArray())).ToArray();
     }
 }

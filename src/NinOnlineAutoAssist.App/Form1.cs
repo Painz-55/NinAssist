@@ -1,5 +1,6 @@
 using System.Drawing;
 using NinOnlineAutoAssist.Core;
+using NinOnlineAutoAssist.Core.Abstractions;
 using NinOnlineAutoAssist.Core.Config;
 using NinOnlineAutoAssist.Core.Events;
 using NinOnlineAutoAssist.Core.Logging;
@@ -42,6 +43,8 @@ public sealed class Form1 : Form
     private LiveContext? _ctx;
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 15 };
     private long _lastUiRefresh;
+    private readonly SystemMonotonicClock _castObservationClock = new();
+    private readonly ObservedCastIds _observedCastIds = new();
 
     private bool _emergencyKeyWasDown;
 
@@ -384,18 +387,25 @@ public sealed class Form1 : Form
         _lblMode.ForeColor = _ctx?.Frame is null ? Warn : Good;
         _lblProvider.Text = _ctx?.Status ?? "Desconectado — leitura indisponível";
         var connected = _ctx?.Provider is not null && _session.Access.IsValid;
-        _btnAutoTurning.Enabled = connected && Allowed(AppFeature.AutoTurning);
-        _btnSubPunish.Enabled = _allowSequence.Enabled = connected && Allowed(SubFeature);
-        _btnCombat.Enabled = _allowCombat.Enabled = connected && (Allowed(AppFeature.AutoAttack) || Allowed(AppFeature.Tool));
-        _btnFollow.Enabled = connected && Allowed(AppFeature.Follow);
-        _btnStamina.Enabled = connected && Allowed(AppFeature.Stamina);
-        _btnCastTurn.Enabled = connected && Allowed(AppFeature.AutoCastTurn) && _ctx?.Provider?.Profile.CastTiming is not null;
+        var profile = _ctx?.Provider?.Profile;
+        bool Approved(LiveInputKind kind) => profile is { ActuationValidated: true } &&
+            (!profile.ExternalProfile || profile.ValidatedInputKinds.Contains(kind.ToString(), StringComparer.Ordinal));
+        var attack = Allowed(AppFeature.AutoAttack) && profile?.ApprovesAttackMode(_config.CombatAssist.AttackMode.ToString()) == true;
+        var tool = Allowed(AppFeature.Tool) && Approved(LiveInputKind.Tool);
+        _btnAutoTurning.Enabled = connected && Allowed(AppFeature.AutoTurning) && Approved(LiveInputKind.Turning);
+        _btnSubPunish.Enabled = connected && Allowed(SubFeature) && Approved(LiveInputKind.Punish);
+        _allowSequence.Enabled = _btnSubPunish.Enabled && profile?.PunishComboValidated != false;
+        _btnCombat.Enabled = _allowCombat.Enabled = connected && (attack || tool);
+        _btnFollow.Enabled = connected && Allowed(AppFeature.Follow) && Approved(LiveInputKind.Follow);
+        _btnStamina.Enabled = connected && Allowed(AppFeature.Stamina) && Approved(LiveInputKind.Stamina);
+        _btnCastTurn.Enabled = connected && Allowed(AppFeature.AutoCastTurn) && Approved(LiveInputKind.CastTurning) && profile?.CastTiming is not null;
         _inspectionButton.Enabled = Allowed(AppFeature.ResourceInspection);
         _account.Text = $"{_session.Email} · {_session.Status}";
     }
 
     private void DisconnectFromGame()
     {
+        _observedCastIds.Reset();
         if (_ctx is not null)
         {
             _ctx.SetAutoTurningEnabled(false);
@@ -463,7 +473,7 @@ public sealed class Form1 : Form
     private void ConfigureCastTurn()
     {
         EmergencyStop();
-        using var dialog = new AutoCastTurnForm(_config.AutoCastTurn);
+        using var dialog = new AutoCastTurnForm(_config.AutoCastTurn, () => _observedCastIds.Recent);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         var updated = _config with { AutoCastTurn = dialog.Settings };
         try { ConfigLoader.Save(SettingsPath, updated); }
@@ -572,6 +582,7 @@ public sealed class Form1 : Form
         {
             if (_loadedCharacter != observed.PlayerName && !string.IsNullOrWhiteSpace(observed.PlayerName))
             {
+                _observedCastIds.Reset();
                 EmergencyStop();
                 try
                 {
@@ -595,6 +606,8 @@ public sealed class Form1 : Form
             }
             if (_autoCharacter.Checked && _txtCharacter.Text != observed.PlayerName) _txtCharacter.Text = observed.PlayerName;
             if (_loadedCharacter == observed.PlayerName) _ctx.BindCharacterSettings(observed.PlayerName);
+            if (_loadedCharacter == observed.PlayerName && _ctx.Provider?.Profile.CastTiming is not null)
+                _observedCastIds.Observe(observed, _castObservationClock.NowMs);
             _session.ObserveCharacter(observed.PlayerName);
         }
         RefreshModeBadge();

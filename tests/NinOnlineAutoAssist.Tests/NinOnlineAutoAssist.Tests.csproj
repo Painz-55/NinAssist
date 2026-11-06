@@ -23,8 +23,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="..\..\compatibility\profiles.json" Link="compatibility\profiles.json" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\..\compatibility\profiles.json.sig" Link="compatibility\profiles.json.sig" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\compatibility\profiles.json" Link="compatibility\profiles.json" CopyToOutputDirectory="Always" />
+    <Content Include="..\..\compatibility\profiles.json.sig" Link="compatibility\profiles.json.sig" CopyToOutputDirectory="Always" />
+    <Content Include="..\..\compatibility\package-profiles.json" Link="compatibility\package-profiles.json" CopyToOutputDirectory="Always" />
+    <Content Include="..\..\compatibility\package-profiles.json.sig" Link="compatibility\package-profiles.json.sig" CopyToOutputDirectory="Always" />
   </ItemGroup>
 
   <ItemGroup>

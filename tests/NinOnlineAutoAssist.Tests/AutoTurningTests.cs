@@ -50,6 +50,23 @@ public class DirectionCalculatorTests
 public class AutoTurningEngineTests
 {
     [Fact]
+    public void Temporary_gate_loss_preserves_turn_cadence()
+    {
+        var options = new AutoTurningOptions { Enabled = true, MinCommandIntervalMs = 180 };
+        var rig = NewRig(options);
+        rig.StandardArena(0, -5);
+        rig.World.PlayerFacing = Direction.Down;
+        rig.Orientation.FacingSink = _ => Direction.Down; // No observed facing confirmation yet.
+        Assert.Equal(TurnDecisionKind.TurnRequested, rig.Tick().Kind);
+        rig.Engine.UpdateOptions(options with { Enabled = false });
+        rig.Clock.Advance(40);
+        Assert.Equal(TurnDecisionKind.Suspended, rig.Tick().Kind);
+        rig.Engine.UpdateOptions(options);
+        Assert.Equal(TurnDecisionKind.Suppressed, rig.Tick().Kind);
+        Assert.Single(rig.Orientation.History);
+    }
+
+    [Fact]
     public void Target_above_requests_Up() { var rig = NewRig(); rig.World.PlayerFacing = Direction.Down; rig.StandardArena(0, -5); Assert.Equal(TurnDecisionKind.TurnRequested, rig.Tick().Kind); Assert.Equal(Direction.Up, rig.Orientation.History.Last().Direction); }
 
     [Fact]
