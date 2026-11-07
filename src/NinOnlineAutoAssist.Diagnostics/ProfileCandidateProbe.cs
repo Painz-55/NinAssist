@@ -11,7 +11,7 @@ namespace NinOnlineAutoAssist.Diagnostics;
 public static class ProfileCandidateProbe
 {
     // Read-only evidence for an explicitly supplied character. A matching name is NOT proof of local identity.
-    public static int Identify(int pid, string character)
+    public static int Identify(int pid, string character, string rootName)
     {
         if (string.IsNullOrWhiteSpace(character) || character.Length > 64) return 2;
         using var process = Process.GetProcessById(pid);
@@ -24,7 +24,7 @@ public static class ProfileCandidateProbe
         var matchIndices = new HashSet<int>();
         var arrayCounts = new List<object>();
         var indexCandidates = new List<object>();
-        foreach (var root in new[] { "oRGErqTKUmEPMiRFsMdt.ILqvIRTizh9luQa4ZLwE" })
+        foreach (var root in new[] { rootName })
         {
             var type = module.GetTypeByName(root);
             foreach (var field in type?.StaticFields ?? [])

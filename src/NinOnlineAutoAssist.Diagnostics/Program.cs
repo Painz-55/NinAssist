@@ -20,8 +20,10 @@ if (args.Length == 3 && args[0] == "--watch-local-projectiles" && int.TryParse(a
 if (args.Length == 2 && args[0] == "--build-schema" && int.TryParse(args[1], out var schemaPid)) return BuildSchemaProbe.Run(schemaPid);
 if (args.Length == 2 && args[0] == "--profile-candidates" && int.TryParse(args[1], out var candidatePid))
     return ProfileCandidateProbe.Run(candidatePid);
-if (args.Length == 3 && args[0] == "--identify-player-candidates" && int.TryParse(args[1], out var identityPid))
-    return ProfileCandidateProbe.Identify(identityPid, args[2]);
+if (args.Length == 4 && args[0] == "--identify-player-candidates" && int.TryParse(args[1], out var identityPid))
+    return ProfileCandidateProbe.Identify(identityPid, args[2], args[3]);
+if (args.Length == 11 && args[0] == "--candidate-structures" && int.TryParse(args[1], out var structurePid))
+    return CandidateStructureProbe.Run(structurePid, args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10]);
 if (args.Length == 3 && args[0] == "--trace-player-movement" && int.TryParse(args[1], out var movementPid))
     return PlayerMovementProbe.Run(movementPid, args[2]);
 if (args.Length == 3 && args[0] == "--check-player-freshness" && int.TryParse(args[1], out var freshnessPid))
