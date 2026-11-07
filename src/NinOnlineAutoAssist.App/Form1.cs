@@ -69,6 +69,7 @@ public sealed class Form1 : Form
 
     public Form1(FirebaseSession session)
     {
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         _session = session;
         if (!session.Access.IsValid) throw new AccessDeniedException("Login obrigatório.");
         _permissionsMask = PermissionsMask;
@@ -230,7 +231,7 @@ public sealed class Form1 : Form
         _allowCombat = new CheckBox { Text = "AUTORIZAR AA + TOOL automáticos (sem tecla segurada)", Dock = DockStyle.Fill, ForeColor = Warn };
         _allowCombat.CheckedChanged += (_, _) => { _ctx?.SetCombatAuthorized(_allowCombat.Checked); RefreshStatus(); };
         rightPanel.Controls.Add(_allowCombat, 0, 4);
-        rightPanel.Controls.Add(new Label { Text = "SUB: giro automático durante buff/+1s; combo HEURÍSTICO.\nAA: Melee radial ou Fan reto como Tool, usando tecla AA; Hisuy frontal.\nFOLLOW: ON + tecla segurada + caminho conhecido. F12 desliga tudo.\nFeche o chat; acertos/cooldowns/armadilhas invisíveis não são garantidos.", Dock = DockStyle.Fill, ForeColor = Dim }, 0, 5);
+        rightPanel.Controls.Add(new Label { Text = "SUB: giro automático durante buff/+1s; combo HEURÍSTICO.\nAA: Melee radial ou Fan reto com largura própria e giro antes do AA; Hisuy indisponível.\nFOLLOW: ON + tecla segurada + caminho conhecido. F12 desliga tudo.\nFeche o chat; acertos/cooldowns/armadilhas invisíveis não são garantidos.", Dock = DockStyle.Fill, ForeColor = Dim }, 0, 5);
         var settings = new Button { Text = "TECLAS / TIMERS SUB", Width = 210, Height = 32, BackColor = PanelAlt, ForeColor = Fg };
         settings.Click += (_, _) => ConfigureKeys();
         var combatSettings = new Button { Text = "AA / TOOL / FOLLOW / STAMINA", Width = 240, Height = 32, BackColor = PanelAlt, ForeColor = Fg };
@@ -390,7 +391,9 @@ public sealed class Form1 : Form
         var profile = _ctx?.Provider?.Profile;
         bool Approved(LiveInputKind kind) => profile is { ActuationValidated: true } &&
             (!profile.ExternalProfile || profile.ValidatedInputKinds.Contains(kind.ToString(), StringComparer.Ordinal));
-        var attack = Allowed(AppFeature.AutoAttack) && profile?.ApprovesAttackMode(_config.CombatAssist.AttackMode.ToString()) == true;
+        var attack = Allowed(AppFeature.AutoAttack) && profile?.ApprovesAttackMode(_config.CombatAssist.AttackMode.ToString()) == true &&
+            (_config.CombatAssist.AttackMode != AutoAttackMode.Fan ||
+             profile.ValidatedInputKinds.Contains(nameof(LiveInputKind.Turning), StringComparer.Ordinal));
         var tool = Allowed(AppFeature.Tool) && Approved(LiveInputKind.Tool);
         _btnAutoTurning.Enabled = connected && Allowed(AppFeature.AutoTurning) && Approved(LiveInputKind.Turning);
         _btnSubPunish.Enabled = connected && Allowed(SubFeature) && Approved(LiveInputKind.Punish);

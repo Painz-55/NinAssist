@@ -17,6 +17,7 @@ internal sealed class LoginForm : Form
 
     public LoginForm(FirebaseClient client, string? updateStatus = null)
     {
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         _client = client;
         _status.Text = updateStatus ?? "";
         Text = "Nin Online AutoAssist — Login";

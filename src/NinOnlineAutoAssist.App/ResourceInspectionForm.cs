@@ -25,6 +25,7 @@ public sealed class ResourceInspectionForm : Form
 
     public ResourceInspectionForm(AccessLease access)
     {
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         _access = access;
         if (!access.Allows(AppFeature.ResourceInspection)) throw new AccessDeniedException("Inspeção não autorizada.");
         _permissionTimer.Tick += (_, _) => { if (!_access.Allows(AppFeature.ResourceInspection)) { _report = null; _grid.DataSource = null; Close(); } };

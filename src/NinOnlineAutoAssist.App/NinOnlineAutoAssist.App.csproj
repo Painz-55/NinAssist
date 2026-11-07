@@ -18,6 +18,7 @@
     <DefineConstants Condition="'$(LocalArchiveBuild)' == 'true'">$(DefineConstants);LOCAL_ARCHIVE</DefineConstants>
     <UpdateRepositoryUrl Condition="'$(UpdateRepositoryUrl)' == ''">https://github.com/Painz-55/NinAssist</UpdateRepositoryUrl>
     <OutputType>WinExe</OutputType>
+    <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>

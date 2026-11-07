@@ -7,6 +7,7 @@ internal sealed class AutoCastTurnForm : Form
     public AutoCastTurnSettings Settings { get; private set; }
     public AutoCastTurnForm(AutoCastTurnSettings settings, Func<IReadOnlyList<int>> observedIds)
     {
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Settings = settings;
         Text = "Auto Cast Turn — janela final";
         ClientSize = new Size(500, 540); FormBorderStyle = FormBorderStyle.FixedDialog;

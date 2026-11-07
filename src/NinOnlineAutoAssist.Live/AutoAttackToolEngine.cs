@@ -11,11 +11,13 @@ public static class CombatGeometry
 {
     public static Direction AttackDirection(LiveFrame frame, CombatAssistSettings settings)
     {
-        if (settings.AttackMode is AutoAttackMode.Melee or AutoAttackMode.Fan ||
+        if (settings.AttackMode == AutoAttackMode.Melee ||
             frame.Snapshot.Target is not { IsAlive: true, IsTargeted: true } target || !frame.Snapshot.Player.IsAlive)
             return Direction.None;
         var facing = frame.Snapshot.Player.Facing;
-        if (InRange(frame, CombatAction.Attack, settings)) return facing;
+        // With a wide Fan corridor the current facing might already pass the range filter while
+        // pointing across the target. Prefer the target's dominant axis before each Fan attempt.
+        if (settings.AttackMode != AutoAttackMode.Fan && InRange(frame, CombatAction.Attack, settings)) return facing;
         var dx = target.PositionX - frame.Snapshot.Player.PositionX;
         var dy = target.PositionY - frame.Snapshot.Player.PositionY;
         if (!double.IsFinite(dx) || !double.IsFinite(dy)) return Direction.None;
@@ -40,11 +42,12 @@ public static class CombatGeometry
         if (!double.IsFinite(dx) || !double.IsFinite(dy)) return false;
         if (action == CombatAction.Attack && settings.AttackMode == AutoAttackMode.Melee)
             return dx * dx + dy * dy <= settings.WeaponRadius * settings.WeaponRadius;
-        // Fan comum uses the exact same straight, facing-dependent corridor as shuriken/Tool.
-        // Only the dispatched action/key/timer differs; Hisuy keeps its separate geometry.
-        var (range, width) = action == CombatAction.Tool || settings.AttackMode == AutoAttackMode.Fan
+        // Fan keeps the straight facing filter, with AA's configurable range and its own width.
+        // Hisuy remains a legacy mode with separate geometry, blocked by signed profiles.
+        var (range, width) = action == CombatAction.Tool
             ? (settings.ToolRange, settings.ToolHalfWidth) : settings.AttackMode switch
         {
+            AutoAttackMode.Fan => (settings.WeaponRadius, settings.EffectiveFanHalfWidth),
             AutoAttackMode.HisuyFan => (settings.HisuyFanRange, settings.HisuyFanHalfWidth),
             _ => (double.NaN, double.NaN)
         };
@@ -60,7 +63,7 @@ public static class CombatGeometry
     public static string DescribeAttack(CombatAssistSettings settings) => settings.AttackMode switch
     {
         AutoAttackMode.Melee => $"Melee radial <= {settings.WeaponRadius} tiles",
-        AutoAttackMode.Fan => $"Fan reto como Tool <= {settings.ToolRange}, meia-largura {settings.ToolHalfWidth} tiles (tecla AA)",
+        AutoAttackMode.Fan => $"Fan reto <= {settings.WeaponRadius}, meia-largura {settings.EffectiveFanHalfWidth} tiles (tecla AA)",
         AutoAttackMode.HisuyFan => $"Hisuy Fan frontal <= {settings.HisuyFanRange}, meia-largura {settings.HisuyFanHalfWidth} tiles",
         _ => "AA inválido/bloqueado"
     };
@@ -92,17 +95,17 @@ public sealed class AutoAttackToolEngine
         if (now < frame.CapturedAtMs || now - frame.CapturedAtMs > 500 || frame.ReadDurationMs is < 0 or > 500)
         { Status = "AA/Tool: dados antigos"; return; }
         if (higherPriorityBusy) { Status = "AA/Tool: aguardando SubPunish/giro"; return; }
-        var attackDirection = _settings.AttackMode is AutoAttackMode.Melee or AutoAttackMode.Fan
+        var attackDirection = _settings.AttackMode == AutoAttackMode.Melee
             ? Direction.None : CombatGeometry.AttackDirection(frame, _settings);
         var attack = attackAllowed && _settings.UseAttack && (_lastAttack is null || now - _lastAttack >= _settings.AttackIntervalMs) &&
-            (_settings.AttackMode is AutoAttackMode.Melee or AutoAttackMode.Fan
+            (_settings.AttackMode == AutoAttackMode.Melee
                 ? CombatGeometry.InRange(frame, CombatAction.Attack, _settings)
                 : attackDirection != Direction.None && _prepareAttack is not null);
         var tool = toolAllowed && _settings.UseTool && (_lastTool is null || now - _lastTool >= _settings.ToolIntervalMs) &&
             CombatGeometry.InRange(frame, CombatAction.Tool, _settings);
         if (!attack && !tool) { Status = "AA/Tool: aguardando intervalo/alcance/alinhamento frontal"; return; }
         var selected = tool && (!attack || _preferTool) ? CombatAction.Tool : CombatAction.Attack;
-        if (selected == CombatAction.Attack && _settings.AttackMode == AutoAttackMode.HisuyFan)
+        if (selected == CombatAction.Attack && _settings.AttackMode is AutoAttackMode.Fan or AutoAttackMode.HisuyFan)
         {
             var prepared = _prepareAttack!(frame, attackDirection);
             if (!prepared.Accepted) { Status = $"AA {_settings.AttackMode}: {prepared.Reason}"; return; }

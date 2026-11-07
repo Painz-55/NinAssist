@@ -10,7 +10,8 @@ internal sealed class StartupUpdateForm : Form
     public StartupUpdateResult Result { get; private set; } = new(StartupUpdateOutcome.Canceled, "Abertura cancelada.");
     public StartupUpdateForm(IStartupUpdateBackend backend)
     {
-        Text = "Nin Online AutoAssist — Atualização automática";
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+        Text = "Nin Online AutoAssist - Atualização automática";
         ClientSize = new Size(430, 120); FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterScreen; MaximizeBox = MinimizeBox = false;
         Controls.Add(_progress);

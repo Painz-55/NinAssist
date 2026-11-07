@@ -13,7 +13,7 @@ public sealed class FanAttackTests
         new GameSnapshot { Player = new PlayerState { Id = "local", Facing = direction },
             Target = new TargetInfo { Id = "target", IsTargeted = true, PositionX = x, PositionY = y } }, at, 51, "Local", "Target", false, null, 0);
     private static CombatAssistSettings Settings(AutoAttackMode mode) => new() { AttackMode = mode,
-        WeaponRadius = 1.5, FanRange = 6, FanHalfWidth = 0.6, HisuyFanRange = 3, HisuyFanHalfWidth = 1,
+        WeaponRadius = 4, FanRange = 6, FanHalfWidth = 0.6, HisuyFanRange = 3, HisuyFanHalfWidth = 1,
         ToolRange = 4, ToolHalfWidth = 0.3, AttackIntervalMs = 200 };
 
     [Theory]
@@ -41,16 +41,38 @@ public sealed class FanAttackTests
     }
 
     [Fact]
-    public void FanUsesExactToolBandAndHisuyHasItsOwnBand()
+    public void ExistingFanSettingsKeepToolWidthAndSharedConfiguredAaDistance()
     {
         var fan = Settings(AutoAttackMode.Fan);
         foreach (var frame in new[] { Frame(4, 0.3), Frame(4.01, 0), Frame(2, 0.31), Frame(-1, 0), Frame(2, 0, Direction.None) })
             Assert.Equal(CombatGeometry.InRange(frame, CombatAction.Tool, fan), CombatGeometry.InRange(frame, CombatAction.Attack, fan));
         Assert.False(CombatGeometry.InRange(Frame(6, 0), CombatAction.Attack, fan));
         Assert.True(CombatGeometry.InRange(Frame(4, 0.3), CombatAction.Attack, fan with { FanRange = 1, FanHalfWidth = 0.01 }));
+        Assert.False(CombatGeometry.InRange(Frame(4, 0), CombatAction.Attack, fan with { WeaponRadius = 2 }));
+        Assert.True(CombatGeometry.InRange(Frame(4, 0), CombatAction.Tool, fan with { WeaponRadius = 2 }));
         Assert.True(CombatGeometry.InRange(Frame(3, 1), CombatAction.Attack, Settings(AutoAttackMode.HisuyFan)));
         Assert.False(CombatGeometry.InRange(Frame(3.01, 0), CombatAction.Attack, Settings(AutoAttackMode.HisuyFan)));
         Assert.False(CombatGeometry.InRange(Frame(2, 1.01), CombatAction.Attack, Settings(AutoAttackMode.HisuyFan)));
+    }
+
+    [Fact]
+    public void FanProjectileWidthCanBeAdjustedWithoutChangingToolOrRange()
+    {
+        var fan = Settings(AutoAttackMode.Fan) with { FanProjectileHalfWidth = 0.75 };
+        Assert.True(CombatGeometry.InRange(Frame(4, 0.7), CombatAction.Attack, fan));
+        Assert.False(CombatGeometry.InRange(Frame(4, 0.7), CombatAction.Tool, fan));
+        Assert.False(CombatGeometry.InRange(Frame(4.01, 0), CombatAction.Attack, fan));
+        Assert.False(CombatGeometry.InRange(Frame(2, 0.76), CombatAction.Attack, fan));
+        Assert.Equal(0.75, fan.EffectiveFanHalfWidth);
+        Assert.Equal(0.3, (fan with { FanProjectileHalfWidth = null }).EffectiveFanHalfWidth);
+    }
+
+    [Fact]
+    public void WideFanStillFacesTheTargetsDominantAxisBeforeAttacking()
+    {
+        var fan = Settings(AutoAttackMode.Fan) with { FanProjectileHalfWidth = 3 };
+        Assert.True(CombatGeometry.InRange(Frame(2, 3), CombatAction.Attack, fan));
+        Assert.Equal(Direction.Down, CombatGeometry.AttackDirection(Frame(2, 3), fan));
     }
 
     [Fact]
@@ -107,7 +129,7 @@ public sealed class FanAttackTests
     {
         var fan = Settings(AutoAttackMode.Fan) with { UseTool = false };
         Assert.Equal(Direction.None, CombatGeometry.AttackDirection(Frame(2, 2), fan));
-        Assert.Equal(Direction.None, CombatGeometry.AttackDirection(Frame(-2, 0), fan));
+        Assert.Equal(Direction.Left, CombatGeometry.AttackDirection(Frame(-2, 0), fan));
         var sent = new List<string>();
         var engine = new AutoAttackToolEngine(new SimulatedClock(0), fan, (action, key) =>
         { sent.Add(key); return ActionResult.Ok(); }, (_, _) => ActionResult.Rejected("giro bloqueado"));
@@ -121,20 +143,51 @@ public sealed class FanAttackTests
     }
 
     [Fact]
-    public void FanLikeToolDoesNotRequireTurnPreparationButNeverAttacksBehind()
+    public void FanRequiresTurnApprovalAndNeverAttacksBehind()
     {
         var sent = new List<string>();
-        var engine = new AutoAttackToolEngine(new SimulatedClock(0), Settings(AutoAttackMode.Fan) with { UseTool = false },
+        var settings = Settings(AutoAttackMode.Fan) with { UseTool = false };
+        var withoutTurn = new AutoAttackToolEngine(new SimulatedClock(0), settings,
             (_, key) => { sent.Add(key); return ActionResult.Ok(); });
+        withoutTurn.Update(Frame(2, 0), true, false);
+        Assert.Empty(sent);
+        var engine = new AutoAttackToolEngine(new SimulatedClock(0), settings,
+            (_, key) => { sent.Add(key); return ActionResult.Ok(); },
+            (frame, desired) => frame.Snapshot.Player.Facing == desired
+                ? ActionResult.Ok() : ActionResult.Deferred("aguardando giro"));
         engine.Update(Frame(2, 0), true, false);
         engine.Update(Frame(-2, 0), true, false);
         Assert.Equal(new[] { "A" }, sent);
     }
 
     [Fact]
+    public void FanTurnsBeforeAttackAndWaitsForFreshObservedFacing()
+    {
+        var clock = new SimulatedClock(100);
+        var sent = new List<string>();
+        long? turnedAt = null;
+        var engine = new AutoAttackToolEngine(clock, Settings(AutoAttackMode.Fan) with { UseTool = false },
+            (_, key) => { sent.Add(key); return ActionResult.Ok(); },
+            (frame, desired) =>
+            {
+                if (turnedAt is { } at && frame.CapturedAtMs <= at) return ActionResult.Deferred("nova leitura");
+                if (frame.Snapshot.Player.Facing == desired) return ActionResult.Ok();
+                turnedAt = clock.NowMs; sent.Add($"Turn {desired}");
+                return ActionResult.Deferred("aguardando direção observada");
+            });
+        engine.Update(Frame(-2, 0, at: 100), true, false);
+        engine.Update(Frame(-2, 0, Direction.Left, at: 100), true, false);
+        Assert.Equal(new[] { "Turn Left" }, sent);
+        clock.Advance(1);
+        engine.Update(Frame(-2, 0, Direction.Left, at: 101), true, false);
+        Assert.Equal(new[] { "Turn Left", "A" }, sent);
+    }
+
+    [Fact]
     public void InvalidProfilesAreRejectedAndNeverFallbackToMelee()
     {
-        foreach (var settings in new[] { Settings((AutoAttackMode)99), Settings(AutoAttackMode.Fan) with { FanRange = double.NaN },
+        foreach (var settings in new[] { Settings((AutoAttackMode)99), Settings(AutoAttackMode.Fan) with { FanProjectileHalfWidth = 0 },
+            Settings(AutoAttackMode.Fan) with { FanProjectileHalfWidth = double.PositiveInfinity }, Settings(AutoAttackMode.Fan) with { FanRange = double.NaN },
             Settings(AutoAttackMode.Fan) with { FanHalfWidth = 0 }, Settings(AutoAttackMode.HisuyFan) with { HisuyFanRange = 0 },
             Settings(AutoAttackMode.HisuyFan) with { HisuyFanHalfWidth = double.PositiveInfinity } })
             Assert.Throws<ArgumentException>(settings.Validate);
@@ -142,7 +195,7 @@ public sealed class FanAttackTests
     }
 
     [Fact]
-    public void OldConfigsDefaultToMeleeAndBothRangedProfilesKeepIndependentSavedValues()
+    public void OldConfigsDefaultToMeleeAndLegacyValuesArePreserved()
     {
         var path = Path.Combine(Path.GetTempPath(), $"nin-fan-{Guid.NewGuid():N}.json");
         try
@@ -156,6 +209,14 @@ public sealed class FanAttackTests
             Assert.Equal(AutoAttackMode.HisuyFan, saved.AttackMode);
             Assert.Equal(8, saved.FanRange); Assert.Equal(0.8, saved.FanHalfWidth);
             Assert.Equal(2.5, saved.HisuyFanRange); Assert.Equal(1.3, saved.HisuyFanHalfWidth);
+            Assert.Null(saved.FanProjectileHalfWidth);
+            Assert.Equal(saved.ToolHalfWidth, saved.EffectiveFanHalfWidth);
+            ConfigLoader.Save(path, config with { CombatAssist = saved with
+                { AttackMode = AutoAttackMode.Fan, FanProjectileHalfWidth = 0.72 } });
+            var adjusted = ConfigLoader.Load(path).CombatAssist;
+            Assert.Equal(0.72, adjusted.EffectiveFanHalfWidth);
+            Assert.Equal(saved.ToolHalfWidth, adjusted.ToolHalfWidth);
+            Assert.Equal(saved.HisuyFanRange, adjusted.HisuyFanRange);
         }
         finally { File.Delete(path); }
     }

@@ -7,6 +7,7 @@ internal sealed class KeySettingsForm : Form
     public AutoAssistConfig.LiveSection Settings { get; private set; }
     public KeySettingsForm(AutoAssistConfig.LiveSection settings)
     {
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Settings = settings;
         Text = "Teclas e intervalos — aplicação desarma os módulos";
         ClientSize = new Size(720, Math.Max(540, Math.Min(820, Screen.PrimaryScreen?.WorkingArea.Height - 100 ?? 820)));

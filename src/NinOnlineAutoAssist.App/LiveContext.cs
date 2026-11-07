@@ -357,6 +357,9 @@ public sealed class LiveContext : IDisposable
             return new(false, "Combo SubPunish bloqueado neste perfil de giro experimental");
         if (kind == LiveInputKind.Attack && !Provider.Profile.ApprovesAttackMode(Config.CombatAssist.AttackMode.ToString()))
             return new(false, $"Attack: modo {Config.CombatAssist.AttackMode} não aprovado para esta build");
+        if (kind == LiveInputKind.Attack && Config.CombatAssist.AttackMode == AutoAttackMode.Fan &&
+            !Provider.Profile.ValidatedInputKinds.Contains(nameof(LiveInputKind.Turning), StringComparer.Ordinal))
+            return new(false, "Fan exige aprovação de giro para esta build");
         var feature = kind switch
         {
             LiveInputKind.Attack => AppFeature.AutoAttack, LiveInputKind.Tool => AppFeature.Tool,
@@ -430,7 +433,9 @@ public sealed class LiveContext : IDisposable
         if (kind is LiveInputKind.Attack or LiveInputKind.Tool)
             return _dispatchingCombat == kind && !SubNeedsPriority &&
                 current.Snapshot.Target?.Id == dispatch.Snapshot.Target?.Id && CombatGeometry.InRange(current,
-                    kind == LiveInputKind.Attack ? CombatAction.Attack : CombatAction.Tool, Config.CombatAssist);
+                    kind == LiveInputKind.Attack ? CombatAction.Attack : CombatAction.Tool, Config.CombatAssist) &&
+                (kind != LiveInputKind.Attack || Config.CombatAssist.AttackMode != AutoAttackMode.Fan ||
+                 CombatGeometry.AttackDirection(current, Config.CombatAssist) == current.Snapshot.Player.Facing);
         if (kind == LiveInputKind.Turning && _preparingFanTurn)
             return !SubNeedsPriority && CastTurn?.InFinalWindow != true &&
                 current.Snapshot.Target?.Id == dispatch.Snapshot.Target?.Id &&
@@ -500,7 +505,7 @@ public sealed class LiveContext : IDisposable
                 ? ActionResult.Ok("Fan alinhado na leitura atual")
                 : ActionResult.Rejected("Fan fora da faixa frontal");
         }
-        if (_fanTurnAt is { } last && _clock.NowMs - last < 40)
+        if (_fanTurnAt is { } last && _clock.NowMs - last < 250)
             return ActionResult.Deferred("Fan: intervalo mínimo do giro");
         _dispatchFrame = frame;
         _fanTurnDesired = desired;

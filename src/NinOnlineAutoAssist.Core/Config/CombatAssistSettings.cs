@@ -18,6 +18,10 @@ public sealed record CombatAssistSettings
     // Initial attempt filters only; actual weapon hitboxes/ranges still need user calibration.
     public double FanRange { get; init; } = 6.0;
     public double FanHalfWidth { get; init; } = 0.60;
+    // Null preserves the effective Tool-width behavior of configurations saved before this option existed.
+    public double? FanProjectileHalfWidth { get; init; }
+    [JsonIgnore]
+    public double EffectiveFanHalfWidth => FanProjectileHalfWidth ?? ToolHalfWidth;
     public double HisuyFanRange { get; init; } = 3.0;
     public double HisuyFanHalfWidth { get; init; } = 1.0;
     public double ToolRange { get; init; } = 6.0;
@@ -41,6 +45,8 @@ public sealed record CombatAssistSettings
             if (!double.IsFinite(range) || range is <= 0 or > 30) throw new ArgumentException("Alcance de Fan/Hisuy Fan deve ser >0 e <=30 tiles.");
         foreach (var width in new[] { FanHalfWidth, HisuyFanHalfWidth })
             if (!double.IsFinite(width) || width is <= 0 or > 10) throw new ArgumentException("Meia-largura de Fan/Hisuy Fan deve ser >0 e <=10 tiles.");
+        if (FanProjectileHalfWidth is { } fanWidth && (!double.IsFinite(fanWidth) || fanWidth is <= 0 or > 10))
+            throw new ArgumentException("Meia-largura do projétil Fan deve ser >0 e <=10 tiles.");
         ValidateStaminaThresholds(StaminaDisableBelowPercent, StaminaEnableAbovePercent);
         foreach (var key in new[] { AttackKey, ToolKey, FollowHoldKey })
             if (string.IsNullOrWhiteSpace(key) || !LiveKeySettings.Keys.ContainsKey(key))

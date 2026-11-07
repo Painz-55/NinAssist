@@ -69,6 +69,27 @@ public sealed class SignedProfileCatalogTests
         Assert.True(updated.PunishComboRequiresTarget);
     }
 
+    [Fact]
+    public void StormFinBuildIsBundledOnlyAndFanTurnHasExplicitApproval()
+    {
+        var directory = Path.Combine(AppContext.BaseDirectory, "compatibility");
+        var game = "F16B1C45EADC1AB64C86128A1B0D45E2257A4E6C72E87106D2C80EE0A11154F4";
+        var common = "23E3A6B8DF264F530AA27B072179366A4C710755219A62FCD64481EEA1DBDDE7";
+        GameMemoryProfile? Select(string name) => SignedProfileCatalog.VerifyAndSelect(
+            File.ReadAllBytes(Path.Combine(directory, name + ".json")),
+            Convert.FromBase64String(File.ReadAllText(Path.Combine(directory, name + ".json.sig")).Trim()),
+            SignedProfileCatalog.PublicKey, game, common);
+        Assert.Null(Select("profiles"));
+        var updated = Assert.IsType<GameMemoryProfile>(Select("package-profiles"));
+        Assert.True(updated.ActuationValidated);
+        Assert.Contains("Turning", updated.ValidatedInputKinds);
+        Assert.Contains("Attack", updated.ValidatedInputKinds);
+        Assert.True(updated.ApprovesAttackMode("Fan"));
+        Assert.True(updated.ApprovesAttackMode("Melee"));
+        Assert.False(updated.ApprovesAttackMode("HisuyFan"));
+        Assert.True(updated.PunishComboRequiresTarget);
+    }
+
     private static (byte[] Payload, byte[] Signature, string PublicKey) Sign(object document)
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
