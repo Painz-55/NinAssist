@@ -57,4 +57,25 @@ public sealed class MapVillageFilterTests
         Assert.Equal(2, Assert.Single(mist.ForDisplay(true)).Slot);
         Assert.Equal(3, Assert.Single(leaf.ForDisplay(true)).Slot);
     }
+
+    [Fact]
+    public void SandPlayerCanHideOwnMistAndRenegadeWhileKeepingLeaf()
+    {
+        var frame = Frame(Player(1, PlayerVillage.Sand, true), Player(2, PlayerVillage.Sand),
+            Player(3, PlayerVillage.Mist), Player(4, PlayerVillage.Leaf),
+            Player(5, PlayerVillage.Renegade), Player(6, PlayerVillage.Unknown));
+        var visible = frame.ForDisplay(true, new[] { PlayerVillage.Mist, PlayerVillage.Renegade });
+        Assert.Equal(4, Assert.Single(visible).Slot);
+        Assert.Equal(6, frame.Players.Count);
+    }
+
+    [Fact]
+    public void ExplicitVillageFilterDoesNotChangeUnknownOrLocalWithoutOwnFilter()
+    {
+        var frame = Frame(Player(1, PlayerVillage.Unknown, true), Player(2, PlayerVillage.Leaf),
+            Player(3, PlayerVillage.Mist), Player(4, PlayerVillage.Unknown));
+        Assert.Equal(new[] { 1, 3, 4 }, frame.ForDisplay(false, new[] { PlayerVillage.Leaf }).Select(p => p.Slot));
+        Assert.Empty(frame.ForDisplay(true, new[] { PlayerVillage.Leaf }));
+        Assert.Same(frame.Players, frame.ForDisplay(false, Array.Empty<PlayerVillage>()));
+    }
 }

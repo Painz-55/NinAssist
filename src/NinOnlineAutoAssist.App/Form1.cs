@@ -63,7 +63,8 @@ public sealed class Form1 : Form
     private MapPlayersFrame? _shownPlayers;
     private MapPlayersPlot _playersPlot = null!;
     private CheckBox _hideOwnVillage = null!;
-    private bool _shownHideOwnVillage;
+    private readonly Dictionary<PlayerVillage, CheckBox> _villageFilters = new();
+    private int _shownVillageFilterMask = -1;
     private Button _btnCastTurn = null!;
     private Label _lblCastTurn = null!;
 
@@ -263,9 +264,19 @@ public sealed class Form1 : Form
         for (var i = 0; i < columnWidths.Length; i++) _playersGrid.Columns[i].Width = columnWidths[i];
         _playersStatus = new Label { Dock = DockStyle.Top, Height = 44, ForeColor = Warn,
             Text = "Aguardando lista local do mapa.\nVilas: Mist azul · Sand amarelo · Leaf verde · Renegado vermelho · Desconhecida neutro." };
-        _hideOwnVillage = new CheckBox { Text = "Ocultar minha vila — mostrar somente outras vilas", Dock = DockStyle.Top,
-            Height = 28, ForeColor = Fg, Checked = false };
+        _hideOwnVillage = new CheckBox { Text = "Ocultar minha vila", AutoSize = true,
+            ForeColor = Fg, Checked = false };
         _hideOwnVillage.CheckedChanged += (_, _) => RefreshPlayers();
+        var filters = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 34, WrapContents = false, AutoScroll = true };
+        filters.Controls.Add(_hideOwnVillage);
+        foreach (var village in new[] { PlayerVillage.Leaf, PlayerVillage.Sand, PlayerVillage.Mist, PlayerVillage.Renegade })
+        {
+            var box = new CheckBox { Text = $"Ocultar {PlayerVillages.Label(village)}", AutoSize = true,
+                ForeColor = Fg, Margin = new Padding(12, 3, 0, 3) };
+            box.CheckedChanged += (_, _) => RefreshPlayers();
+            _villageFilters.Add(village, box);
+            filters.Controls.Add(box);
+        }
         _playersPlot = new MapPlayersPlot();
         var mapBody = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
         mapBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
@@ -273,7 +284,7 @@ public sealed class Form1 : Form
         mapBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         mapBody.Controls.Add(_playersGrid, 0, 0);
         mapBody.Controls.Add(_playersPlot, 1, 0);
-        playersTab.Controls.Add(mapBody); playersTab.Controls.Add(_playersStatus); playersTab.Controls.Add(_hideOwnVillage);
+        playersTab.Controls.Add(mapBody); playersTab.Controls.Add(_playersStatus); playersTab.Controls.Add(filters);
         tabs.TabPages.Add(playersTab); tabs.TabPages.Add(logTab);
         root.Controls.Add(tabs, 0, 3);
     }
@@ -282,18 +293,27 @@ public sealed class Form1 : Form
     {
         var list = _ctx?.MapPlayers;
         var hideOwnVillage = _hideOwnVillage.Checked;
+        var own = list?.LocalVillage ?? PlayerVillage.Unknown;
+        foreach (var (village, box) in _villageFilters)
+        {
+            box.Visible = village != own;
+            box.Enabled = village != own;
+        }
+        var hidden = _villageFilters.Where(entry => entry.Key != own && entry.Value.Checked)
+            .Select(entry => entry.Key).ToArray();
+        var filterMask = (hideOwnVillage ? 1 : 0) | hidden.Aggregate(0, (mask, village) => mask | (1 << (int)village));
         _playersStatus.Text = list is null
             ? "Lista indisponível/antiga — aguardando leitura válida. " + (_ctx?.MapPlayersStatus ?? "Desconectado")
             : hideOwnVillage && !PlayerVillages.IsKnown(list.LocalVillage)
                 ? "Filtro ativo: sua vila ainda é desconhecida; aguardando leitura válida.\nNenhum personagem será classificado como de outra vila sem essa informação."
-                : (_ctx?.MapPlayersStatus ?? "") + (hideOwnVillage
-                    ? $"\nOcultando {PlayerVillages.Label(list.LocalVillage)} e vilas desconhecidas. Filtro apenas visual; não altera automações."
+                : (_ctx?.MapPlayersStatus ?? "") + (hideOwnVillage || hidden.Length > 0
+                    ? "\nFiltros apenas visuais; não alteram automações. Estados de invisibilidade/transformação não mapeados."
                     : "\nSem filtro de visibilidade/aparência. Estados de invisibilidade/transformação ainda não mapeados; não garante todos os jogadores do servidor.");
-        if (ReferenceEquals(list, _shownPlayers) && hideOwnVillage == _shownHideOwnVillage) return;
+        if (ReferenceEquals(list, _shownPlayers) && filterMask == _shownVillageFilterMask) return;
         _shownPlayers = list;
-        _shownHideOwnVillage = hideOwnVillage;
+        _shownVillageFilterMask = filterMask;
         if (list is null) { _playersGrid.Rows.Clear(); _playersPlot.Offsets = []; _playersPlot.Invalidate(); return; }
-        var visiblePlayers = list.ForDisplay(hideOwnVillage);
+        var visiblePlayers = list.ForDisplay(hideOwnVillage, hidden);
         var player = _ctx?.Frame?.Snapshot.Player;
         _playersPlot.Offsets = player is null ? [] : visiblePlayers.Where(p => p.X.HasValue && p.Y.HasValue)
             .Select(p => (p.X!.Value - player.PositionX, p.Y!.Value - player.PositionY, p.IsSelected)).ToArray();

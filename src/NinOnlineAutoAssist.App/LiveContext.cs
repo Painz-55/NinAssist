@@ -196,11 +196,13 @@ public sealed class LiveContext : IDisposable
                     {
                         var followHeld = _access.Allows(AppFeature.Follow) && _followEnabled && LiveInputController.IsDown(LiveKeySettings.Keys[Config.CombatAssist.FollowHoldKey]);
                         var oldNavigation = Volatile.Read(ref _navigation);
-                        Provider.ReadNavigation = followHeld && (oldNavigation is null ||
+                        Provider.ReadNavigation = !_subReadBurst && followHeld && (oldNavigation is null ||
                             oldNavigation.Map != Volatile.Read(ref _frame)?.Map || _clock.NowMs - oldNavigation.CapturedAtMs >= 100);
                         var oldList = Volatile.Read(ref _mapPlayers);
-                        Provider.ReadMapPlayers = _access.Allows(AppFeature.MapPlayers) && (oldList is null || oldList.Map != Volatile.Read(ref _frame)?.Map ||
-                            _clock.NowMs - oldList.CapturedAtMs >= 500);
+                        // Map census is display-only and relatively expensive. During a live Substitution
+                        // window, prioritize distinct buff samples over refreshing the display list.
+                        Provider.ReadMapPlayers = !_subReadBurst && _access.Allows(AppFeature.MapPlayers) && (oldList is null || oldList.Map != Volatile.Read(ref _frame)?.Map ||
+                            _clock.NowMs - oldList.CapturedAtMs >= 200);
                         if (!_access.Allows(AppFeature.MapPlayers)) Volatile.Write(ref _mapPlayers, null);
                         Provider.GetSnapshot();
                         Volatile.Write(ref _frame, Provider.Frame);
@@ -624,7 +626,7 @@ public sealed class LiveContext : IDisposable
         // No Ctrl dependency here. The engine deduplicates samples and cancels on its OWN gate only.
         Punish?.Update(frame, _subEnabled, CounterAttackAuthorized, punishSafety.Allowed, punishSafety.Reason);
         _subReadBurst = punishSafety.Allowed && (SubstitutionTurningActive ||
-            Punish?.State is EarlyPunishState.WatchingBuff or EarlyPunishState.RemovalPending);
+            Punish?.State is EarlyPunishState.WatchingBuff or EarlyPunishState.RemovalPending or EarlyPunishState.Executing);
         var castGate = CheckSafety(LiveInputKind.CastTurning);
         CastTurn?.Update(frame, castGate.Allowed, SubNeedsPriority);
         CastTurnStatus = castGate.Allowed ? CastTurn?.Status ?? "Indisponível" : castGate.Reason;

@@ -26,6 +26,18 @@ public sealed record MapPlayersFrame(int Map, string LocalId, long CapturedAtMs,
         return Array.AsReadOnly(Players.Where(p => !p.IsLocal && PlayerVillages.IsKnown(p.Village) && p.Village != own).ToArray());
     }
 
+    /// <summary>Independent presentation filters; an unknown local village must never be guessed.</summary>
+    public IReadOnlyList<MapPlayer> ForDisplay(bool hideOwnVillage, IReadOnlyCollection<PlayerVillage> hiddenVillages)
+    {
+        ArgumentNullException.ThrowIfNull(hiddenVillages);
+        if (!hideOwnVillage && hiddenVillages.Count == 0) return Players;
+        var own = LocalVillage;
+        return Array.AsReadOnly(Players.Where(p =>
+            (!hideOwnVillage || PlayerVillages.IsKnown(own) && !p.IsLocal &&
+                PlayerVillages.IsKnown(p.Village) && p.Village != own) &&
+            !(PlayerVillages.IsKnown(p.Village) && hiddenVillages.Contains(p.Village))).ToArray());
+    }
+
     public bool IsCurrent(LiveFrame? live, long nowMs) => live is not null && live.Map == Map &&
         live.Snapshot.Player.Id == LocalId && nowMs >= CapturedAtMs && nowMs - CapturedAtMs <= 1500 &&
         nowMs >= live.CapturedAtMs && nowMs - live.CapturedAtMs <= 500;
