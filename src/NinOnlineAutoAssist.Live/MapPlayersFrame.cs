@@ -5,6 +5,8 @@ public sealed record MapPlayer(int Slot, string Name, int Map, double? X, double
     public PlayerVillage Village { get; init; } = PlayerVillage.Unknown;
 }
 
+public sealed record NumberedMapPlayer(int Number, MapPlayer Player);
+
 /// <summary>Client-side map records, not a server-wide or visibility-authoritative census.</summary>
 public sealed record MapPlayersFrame(int Map, string LocalId, long CapturedAtMs, IReadOnlyList<MapPlayer> Players, int UnreadableSlots)
 {
@@ -37,6 +39,11 @@ public sealed record MapPlayersFrame(int Map, string LocalId, long CapturedAtMs,
                 PlayerVillages.IsKnown(p.Village) && p.Village != own) &&
             !(PlayerVillages.IsKnown(p.Village) && hiddenVillages.Contains(p.Village))).ToArray());
     }
+
+    /// <summary>Display numbers are recalculated after filtering; Slot remains the game's stable identifier.</summary>
+    public IReadOnlyList<NumberedMapPlayer> NumberedForDisplay(bool hideOwnVillage, IReadOnlyCollection<PlayerVillage> hiddenVillages) =>
+        Array.AsReadOnly(ForDisplay(hideOwnVillage, hiddenVillages)
+            .Select((player, index) => new NumberedMapPlayer(index + 1, player)).ToArray());
 
     public bool IsCurrent(LiveFrame? live, long nowMs) => live is not null && live.Map == Map &&
         live.Snapshot.Player.Id == LocalId && nowMs >= CapturedAtMs && nowMs - CapturedAtMs <= 1500 &&

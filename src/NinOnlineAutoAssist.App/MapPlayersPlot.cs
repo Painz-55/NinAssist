@@ -1,11 +1,15 @@
 using System.Drawing.Drawing2D;
+using NinOnlineAutoAssist.Live;
 
 namespace NinOnlineAutoAssist.App;
 
 /// <summary>Visual-only Cartesian map: origin is local player, +X right, +Y down.</summary>
 internal sealed class MapPlayersPlot : Control
 {
-    public IReadOnlyList<(double X, double Y, bool Selected)> Offsets { get; set; } = [];
+    public IReadOnlyList<(int Slot, double X, double Y, bool Targeted)> Offsets { get; set; } = [];
+    public int? SelectedRowSlot { get; set; }
+    public bool SelectedHighlightOn { get; set; }
+    public bool HasSelectedRow => SelectedRowSlot is { } slot && Offsets.Any(p => p.Slot == slot);
     public MapPlayersPlot() { DoubleBuffered = true; Dock = DockStyle.Fill; }
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -25,7 +29,18 @@ internal sealed class MapPlayersPlot : Control
         foreach (var p in Offsets.Where(p => double.IsFinite(p.X) && double.IsFinite(p.Y)))
         {
             var x = cx + (float)(p.X * unit); var y = cy + (float)(p.Y * unit);
-            g.FillEllipse(p.Selected ? Brushes.Orange : Brushes.DeepSkyBlue, x - 4, y - 4, 8, 8);
+            var marker = MapPlotMarkers.Classify(p.Slot, p.Targeted, SelectedRowSlot);
+            if (marker is MapPlotMarker.TableSelection or MapPlotMarker.Both)
+            {
+                // A row marked in this table blinks red, independently of the in-game target.
+                if (SelectedHighlightOn) g.FillEllipse(Brushes.Red, x - 7, y - 7, 14, 14);
+                else g.FillEllipse(Brushes.DarkRed, x - 4, y - 4, 8, 8);
+                using var outline = new Pen(Color.Red, SelectedHighlightOn ? 2 : 1);
+                g.DrawEllipse(outline, x - 8, y - 8, 16, 16);
+                if (marker == MapPlotMarker.Both) g.FillEllipse(Brushes.Gold, x - 2, y - 2, 4, 4);
+            }
+            else if (marker == MapPlotMarker.InGameTarget) g.FillEllipse(Brushes.Gold, x - 5, y - 5, 10, 10);
+            else g.FillEllipse(Brushes.DeepSkyBlue, x - 4, y - 4, 8, 8);
         }
         g.FillEllipse(Brushes.White, cx - 3, cy - 3, 6, 6);
     }

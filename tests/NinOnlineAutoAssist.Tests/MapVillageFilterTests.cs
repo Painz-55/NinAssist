@@ -70,6 +70,30 @@ public sealed class MapVillageFilterTests
     }
 
     [Fact]
+    public void DisplayNumbersAreSequentialAfterEachVillageFilterChange()
+    {
+        var frame = Frame(Player(9, PlayerVillage.Sand, true), Player(20, PlayerVillage.Leaf),
+            Player(31, PlayerVillage.Mist, selected: true), Player(45, PlayerVillage.Renegade));
+        var all = frame.NumberedForDisplay(false, Array.Empty<PlayerVillage>());
+        Assert.Equal(new[] { 1, 2, 3, 4 }, all.Select(p => p.Number));
+        Assert.Equal(new[] { 9, 20, 31, 45 }, all.Select(p => p.Player.Slot));
+        var filtered = frame.NumberedForDisplay(true, new[] { PlayerVillage.Leaf });
+        Assert.Equal(new[] { 1, 2 }, filtered.Select(p => p.Number));
+        Assert.Equal(new[] { 31, 45 }, filtered.Select(p => p.Player.Slot));
+        Assert.True(filtered[0].Player.IsSelected);
+        Assert.Equal(new[] { 9, 20, 31, 45 }, frame.Players.Select(p => p.Slot));
+    }
+
+    [Fact]
+    public void TableSelectionAndInGameTargetHaveSeparateMapMarkers()
+    {
+        Assert.Equal(MapPlotMarker.TableSelection, MapPlotMarkers.Classify(31, false, 31));
+        Assert.Equal(MapPlotMarker.InGameTarget, MapPlotMarkers.Classify(45, true, 31));
+        Assert.Equal(MapPlotMarker.Both, MapPlotMarkers.Classify(31, true, 31));
+        Assert.Equal(MapPlotMarker.Player, MapPlotMarkers.Classify(45, false, null));
+    }
+
+    [Fact]
     public void ExplicitVillageFilterDoesNotChangeUnknownOrLocalWithoutOwnFilter()
     {
         var frame = Frame(Player(1, PlayerVillage.Unknown, true), Player(2, PlayerVillage.Leaf),

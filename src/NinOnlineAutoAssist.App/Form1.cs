@@ -62,6 +62,8 @@ public sealed class Form1 : Form
     private Label _playersStatus = null!;
     private MapPlayersFrame? _shownPlayers;
     private MapPlayersPlot _playersPlot = null!;
+    private int? _selectedMapSlot;
+    private bool _refreshingPlayers;
     private CheckBox _hideOwnVillage = null!;
     private readonly Dictionary<PlayerVillage, CheckBox> _villageFilters = new();
     private int _shownVillageFilterMask = -1;
@@ -258,9 +260,17 @@ public sealed class Form1 : Form
         _playersGrid.DefaultCellStyle.ForeColor = Fg;
         _playersGrid.ColumnHeadersDefaultCellStyle.BackColor = PanelAlt;
         _playersGrid.ColumnHeadersDefaultCellStyle.ForeColor = Fg;
-        foreach (var caption in new[] { "Slot", "Nome", "Vila", "Posição (tiles)", "Distância", "ΔX", "ΔY", "Você / Alvo", "Visibilidade", "Transformação" })
+        _playersGrid.SelectionChanged += (_, _) =>
+        {
+            if (_refreshingPlayers) return;
+            _selectedMapSlot = _playersGrid.SelectedRows.Count == 1 && _playersGrid.SelectedRows[0].Tag is int slot
+                ? slot : null;
+            _playersPlot.SelectedRowSlot = _selectedMapSlot;
+            _playersPlot.Invalidate();
+        };
+        foreach (var caption in new[] { "#", "Slot", "Nome", "Vila", "Posição (tiles)", "Distância", "ΔX", "ΔY", "Você / Alvo", "Visibilidade", "Transformação" })
             _playersGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = caption, SortMode = DataGridViewColumnSortMode.NotSortable });
-        var columnWidths = new[] { 48, 150, 85, 105, 75, 65, 65, 90, 110, 110 };
+        var columnWidths = new[] { 40, 48, 150, 85, 105, 75, 65, 65, 90, 110, 110 };
         for (var i = 0; i < columnWidths.Length; i++) _playersGrid.Columns[i].Width = columnWidths[i];
         _playersStatus = new Label { Dock = DockStyle.Top, Height = 44, ForeColor = Warn,
             Text = "Aguardando lista local do mapa.\nVilas: Mist azul · Sand amarelo · Leaf verde · Renegado vermelho · Desconhecida neutro." };
@@ -291,6 +301,13 @@ public sealed class Form1 : Form
 
     private void RefreshPlayers()
     {
+        // The UI timer blinks a table-selected row between 200 ms map-list reads.
+        var highlightOn = _playersPlot.HasSelectedRow && (Environment.TickCount64 / 350) % 2 == 0;
+        if (_playersPlot.SelectedHighlightOn != highlightOn)
+        {
+            _playersPlot.SelectedHighlightOn = highlightOn;
+            _playersPlot.Invalidate();
+        }
         var list = _ctx?.MapPlayers;
         var hideOwnVillage = _hideOwnVillage.Checked;
         var own = list?.LocalVillage ?? PlayerVillage.Unknown;
@@ -312,35 +329,57 @@ public sealed class Form1 : Form
         if (ReferenceEquals(list, _shownPlayers) && filterMask == _shownVillageFilterMask) return;
         _shownPlayers = list;
         _shownVillageFilterMask = filterMask;
-        if (list is null) { _playersGrid.Rows.Clear(); _playersPlot.Offsets = []; _playersPlot.Invalidate(); return; }
-        var visiblePlayers = list.ForDisplay(hideOwnVillage, hidden);
+        if (list is null)
+        {
+            _refreshingPlayers = true;
+            try { _playersGrid.Rows.Clear(); }
+            finally { _refreshingPlayers = false; }
+            _selectedMapSlot = _playersPlot.SelectedRowSlot = null;
+            _playersPlot.Offsets = []; _playersPlot.Invalidate(); return;
+        }
+        var numberedPlayers = list.NumberedForDisplay(hideOwnVillage, hidden);
+        var visiblePlayers = numberedPlayers.Select(entry => entry.Player).ToArray();
         var player = _ctx?.Frame?.Snapshot.Player;
         _playersPlot.Offsets = player is null ? [] : visiblePlayers.Where(p => p.X.HasValue && p.Y.HasValue)
-            .Select(p => (p.X!.Value - player.PositionX, p.Y!.Value - player.PositionY, p.IsSelected)).ToArray();
+            .Select(p => (p.Slot, p.X!.Value - player.PositionX, p.Y!.Value - player.PositionY, p.IsSelected)).ToArray();
+        if (!visiblePlayers.Any(p => p.Slot == _selectedMapSlot)) _selectedMapSlot = null;
+        _playersPlot.SelectedRowSlot = _selectedMapSlot;
         _playersPlot.Invalidate();
-        var sameSlots = _playersGrid.Rows.Count == visiblePlayers.Count && visiblePlayers.Select((p, i) =>
+        var sameSlots = _playersGrid.Rows.Count == visiblePlayers.Length && visiblePlayers.Select((p, i) =>
             Equals(_playersGrid.Rows[i].Tag, p.Slot)).All(v => v);
-        if (!sameSlots) _playersGrid.Rows.Clear();
-        for (var i = 0; i < visiblePlayers.Count; i++)
+        _refreshingPlayers = true;
+        try
         {
-            var p = visiblePlayers[i];
-            var position = p.X is { } x && p.Y is { } y ? $"{x:0.0}, {y:0.0}" : "Desconhecida";
-            var distance = player is not null && p.X is { } px && p.Y is { } py
-                ? Math.Sqrt(Math.Pow(px - player.PositionX, 2) + Math.Pow(py - player.PositionY, 2)).ToString("0.0") : "?";
-            var dx = player is not null && p.X is { } vx ? (vx - player.PositionX).ToString("+0.0;-0.0;0.0") : "?";
-            var dy = player is not null && p.Y is { } vy ? (vy - player.PositionY).ToString("+0.0;-0.0;0.0") : "?";
-            object[] values = { p.Slot, p.Name, PlayerVillages.Label(p.Village), position, distance, dx, dy,
-                p.IsLocal ? "VOCÊ" : p.IsSelected ? "ALVO" : "—", "Não mapeada", "Não mapeada" };
-            if (sameSlots) _playersGrid.Rows[i].SetValues(values);
-            else { var row = _playersGrid.Rows.Add(values); _playersGrid.Rows[row].Tag = p.Slot; }
-            var color = PlayerVillages.ColorArgb(p.Village) is { } argb ? Color.FromArgb(argb) : Fg;
-            foreach (var column in new[] { 1, 2 })
+            if (!sameSlots) _playersGrid.Rows.Clear();
+            for (var i = 0; i < visiblePlayers.Length; i++)
             {
-                var style = _playersGrid.Rows[i].Cells[column].Style;
-                style.ForeColor = style.SelectionForeColor = color;
-                style.SelectionBackColor = PanelAlt;
+                var p = visiblePlayers[i];
+                var position = p.X is { } x && p.Y is { } y ? $"{x:0.0}, {y:0.0}" : "Desconhecida";
+                var distance = player is not null && p.X is { } px && p.Y is { } py
+                    ? Math.Sqrt(Math.Pow(px - player.PositionX, 2) + Math.Pow(py - player.PositionY, 2)).ToString("0.0") : "?";
+                var dx = player is not null && p.X is { } vx ? (vx - player.PositionX).ToString("+0.0;-0.0;0.0") : "?";
+                var dy = player is not null && p.Y is { } vy ? (vy - player.PositionY).ToString("+0.0;-0.0;0.0") : "?";
+                object[] values = { numberedPlayers[i].Number, p.Slot, p.Name, PlayerVillages.Label(p.Village), position, distance, dx, dy,
+                    p.IsLocal ? "VOCÊ" : p.IsSelected ? "ALVO" : "—", "Não mapeada", "Não mapeada" };
+                if (sameSlots) _playersGrid.Rows[i].SetValues(values);
+                else { var row = _playersGrid.Rows.Add(values); _playersGrid.Rows[row].Tag = p.Slot; }
+                var color = PlayerVillages.ColorArgb(p.Village) is { } argb ? Color.FromArgb(argb) : Fg;
+                foreach (var column in new[] { 2, 3 })
+                {
+                    var style = _playersGrid.Rows[i].Cells[column].Style;
+                    style.ForeColor = style.SelectionForeColor = color;
+                    style.SelectionBackColor = PanelAlt;
+                }
+            }
+            if (!sameSlots)
+            {
+                _playersGrid.ClearSelection();
+                if (_selectedMapSlot is { } selectedSlot)
+                    foreach (DataGridViewRow row in _playersGrid.Rows)
+                        if (Equals(row.Tag, selectedSlot)) { row.Selected = true; break; }
             }
         }
+        finally { _refreshingPlayers = false; }
     }
 
     private Control BuildLegend()
