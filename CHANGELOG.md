@@ -1,5 +1,11 @@
 # Alterações
 
+## 1.1.37
+
+- SubPunish não solicita giros enquanto o buff de Substitution está ativo. Antes de cada tecla do combo, gira somente se a direção observada estiver desalinhada; após o giro aguarda uma nova leitura alinhada, sem repetir o comando cegamente.
+- Auto Turn comum continua exigindo a tecla de ativação. Permanecem as travas de alvo, foco, autorização Firebase, F12 e segurança do combo.
+- Validação local: 706 testes e observação em jogo de giro preparatório, confirmação de direção e tecla seguinte; efeitos/acertos das skills não são inferidos pelo log.
+
 ## 1.1.4
 
 - Canal de perfis de compatibilidade assinado, separado do instalador. Novo par de DLLs só é aceito por perfil completo e assinado; sem perfil ou com erro de rede/assinatura continua bloqueado.
