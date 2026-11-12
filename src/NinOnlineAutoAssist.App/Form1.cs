@@ -234,7 +234,7 @@ public sealed class Form1 : Form
         _allowCombat = new CheckBox { Text = "AUTORIZAR AA + TOOL automáticos (sem tecla segurada)", Dock = DockStyle.Fill, ForeColor = Warn };
         _allowCombat.CheckedChanged += (_, _) => { _ctx?.SetCombatAuthorized(_allowCombat.Checked); RefreshStatus(); };
         rightPanel.Controls.Add(_allowCombat, 0, 4);
-        rightPanel.Controls.Add(new Label { Text = "SUB: giro automático durante buff/+1s; combo HEURÍSTICO.\nAA: Melee radial ou Fan reto com largura própria e giro antes do AA; Hisuy indisponível.\nFOLLOW: ON + tecla segurada + caminho conhecido. F12 desliga tudo.\nFeche o chat; acertos/cooldowns/armadilhas invisíveis não são garantidos.", Dock = DockStyle.Fill, ForeColor = Dim }, 0, 5);
+        rightPanel.Controls.Add(new Label { Text = "SUB: sem giro durante buff; giro preparatório antes das teclas do combo HEURÍSTICO.\nAA: Melee radial ou Fan reto com largura própria e giro antes do AA; Hisuy indisponível.\nFOLLOW: ON + tecla segurada + caminho conhecido. F12 desliga tudo.\nFeche o chat; acertos/cooldowns/armadilhas invisíveis não são garantidos.", Dock = DockStyle.Fill, ForeColor = Dim }, 0, 5);
         var settings = new Button { Text = "TECLAS / TIMERS SUB", Width = 210, Height = 32, BackColor = PanelAlt, ForeColor = Fg };
         settings.Click += (_, _) => ConfigureKeys();
         var combatSettings = new Button { Text = "AA / TOOL / FOLLOW / STAMINA", Width = 240, Height = 32, BackColor = PanelAlt, ForeColor = Fg };
@@ -431,9 +431,9 @@ public sealed class Form1 : Form
         AppPaths.Settings.EnsureConfig();
         _config = ConfigLoader.Load(ConfigPath);
         _txtCharacter.Text = _autoCharacter.Checked ? "" : _config.Live.CharacterName;
-        _allowSequence.Text = $"AUTORIZAR {string.Join(" → ", _config.Live.PunishKeys)} + GIRO SUB (buff/+1s)";
+        _allowSequence.Text = $"AUTORIZAR {string.Join(" → ", _config.Live.PunishKeys)} + GIRO ANTES DO COMBO";
         _allowSequence.Checked = false; // Offensive permission is explicit for each app session.
-        AppendLog(LogLevel.Info, "AO VIVO: módulos OFF. SubPunish autorizado gira automaticamente para o alvo durante buff/+1s. Fora da janela, Turn exige tecla. Combo sem alvo/tecla; remoção antecipada é HEURÍSTICA.", null);
+        AppendLog(LogLevel.Info, "AO VIVO: módulos OFF. Sub não gira durante buff; prepara direção antes de cada tecla do combo. Turn comum exige tecla. Remoção antecipada é HEURÍSTICA.", null);
         RefreshModuleButtons();
         RefreshModeBadge();
         RefreshStatus();
@@ -442,7 +442,6 @@ public sealed class Form1 : Form
     private void RefreshModeBadge()
     {
         _lblMode.Text = _ctx?.Provider is null ? "AO VIVO · DESCONECTADO"
-            : _ctx.SubstitutionTurningActive ? "TURN: SUB AUTOMÁTICO (+1s)"
             : $"TURN: {string.Join(" / ", _config.Live.TurnActivationKeys)}";
         _lblMode.ForeColor = _ctx?.Frame is null ? Warn : Good;
         _lblProvider.Text = _ctx?.Status ?? "Desconectado — leitura indisponível";
@@ -514,7 +513,7 @@ public sealed class Form1 : Form
         try { ConfigLoader.Save(SettingsPath, updated); }
         catch (Exception ex) { AppendLog(LogLevel.Error, $"Não foi possível salvar: {ex.Message}", null); return; }
         _config = updated;
-        _allowSequence.Text = $"AUTORIZAR {string.Join(" → ", updated.Live.PunishKeys)} + GIRO SUB (buff/+1s)";
+        _allowSequence.Text = $"AUTORIZAR {string.Join(" → ", updated.Live.PunishKeys)} + GIRO ANTES DO COMBO";
         ConnectToGame();
         AppendLog(LogLevel.Info, "Teclas salvas/aplicadas; módulos OFF e autorização revogada.", EventOrigin.Requested);
     }
@@ -655,7 +654,7 @@ public sealed class Form1 : Form
                     _config = settings with { Live = settings.Live with {
                         CharacterName = observed.PlayerName, AllowCounterAttackSequence = false } };
                     _allowSequence.Checked = _allowCombat.Checked = false;
-                    _allowSequence.Text = $"AUTORIZAR {string.Join(" → ", _config.Live.PunishKeys)} + GIRO SUB (buff/+1s)";
+                    _allowSequence.Text = $"AUTORIZAR {string.Join(" → ", _config.Live.PunishKeys)} + GIRO ANTES DO COMBO";
                     AppendLog(LogLevel.Info, $"Configurações de {observed.PlayerName} carregadas; módulos e consentimento OFF.", null);
                     ConnectToGame(); // rebuild engines with the verified character's settings
                 }

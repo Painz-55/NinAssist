@@ -32,7 +32,6 @@ public sealed class LiveContext : IDisposable
     private readonly SystemMonotonicClock _clock = new();
     private readonly CancellationTokenSource _stop = new();
     private readonly object _automationLock = new();
-    private readonly SubstitutionTurnWindow _subTurnWindow = new();
     private ResponsiveAutomationLoop? _automation;
     private LiveInputController? _input;
     private ComboFacingCoordinator? _comboFacing;
@@ -73,13 +72,9 @@ public sealed class LiveContext : IDisposable
     private string? _lastBuffNames;
     private string _connectionStatus = "Desconectado";
     public bool CounterAttackAuthorized => _authorized;
-    private bool PunishProfileApproved => Provider?.Profile is { ActuationValidated: true } profile &&
-        (!profile.ExternalProfile || profile.ValidatedInputKinds.Contains(nameof(LiveInputKind.Punish), StringComparer.Ordinal));
     private bool PunishComboApproved => Provider?.Profile.PunishComboValidated != false;
     private bool StrictSubTurnProfile => Provider?.Profile is { } profile &&
         (profile.PunishComboValidated == false || profile.PunishComboRequiresTarget == true);
-    private bool SubTurnConsent => CounterAttackAuthorized ||
-        (Provider?.Profile.PunishComboValidated == false && _subEnabled);
     public string Status => Provider?.Status ?? _connectionStatus;
     public string TurningSafetyStatus { get; private set; } = "Auto Turning OFF";
     public string PunishSafetyStatus { get; private set; } = "SubPunish OFF";
@@ -89,15 +84,6 @@ public sealed class LiveContext : IDisposable
     public string StaminaStatus { get; private set; } = "Auto Stamina OFF";
     private bool SubNeedsPriority => Punish?.BlocksAutoTurning == true ||
         (_subEnabled && CounterAttackAuthorized && Punish?.HasUnprocessedRemoval(Volatile.Read(ref _frame)) == true);
-    public bool SubstitutionTurningActive
-    {
-        get
-        {
-            lock (_automationLock)
-                return _subEnabled && PunishProfileApproved && SubTurnConsent &&
-                    _subTurnWindow.IsOpen(Volatile.Read(ref _frame), _clock.NowMs);
-        }
-    }
     public string? ActionStatus => _input?.LastActionText;
     public LiveBuffObservation BuffObservation => LiveBuffObservation.FromFrame(Volatile.Read(ref _frame), _clock.NowMs);
     public LiveFrame? Frame => Volatile.Read(ref _frame) is { } frame && _clock.NowMs - frame.CapturedAtMs <= 500 ? frame : null;
@@ -174,7 +160,7 @@ public sealed class LiveContext : IDisposable
                 }
                 finally { _dispatchingStamina = false; }
             }, config.CombatAssist.StaminaDisableBelowPercent, config.CombatAssist.StaminaEnableAbovePercent);
-            Log.Log(LogLevel.Info, $"Live connection: PID {pid}, character {(detectCharacterAutomatically ? "detecção automática pelo índice local" : config.Live.CharacterName)}; modules OFF; Turn activation: {string.Join(" / ", config.Live.TurnActivationKeys)}; giro automático com SubPunish autorizado durante buff/+1s; combo sem alvo {string.Join(" → ", config.Live.PunishKeys)} {(CounterAttackAuthorized ? "authorized" : "DISABLED")}");
+            Log.Log(LogLevel.Info, $"Live connection: PID {pid}, character {(detectCharacterAutomatically ? "detecção automática pelo índice local" : config.Live.CharacterName)}; modules OFF; Turn activation: {string.Join(" / ", config.Live.TurnActivationKeys)}; Sub não gira durante buff; giro apenas antes da tecla do combo; combo {string.Join(" → ", config.Live.PunishKeys)} {(CounterAttackAuthorized ? "authorized" : "DISABLED")}");
             Log.Log(LogLevel.Info, $"AA/Tool OFF e desautorizado: {config.CombatAssist.AttackKey} {CombatGeometry.DescribeAttack(config.CombatAssist)} / Tool {config.CombatAssist.ToolKey} frontal <= {config.CombatAssist.ToolRange} tiles; Follow OFF, tecla {config.CombatAssist.FollowHoldKey}");
             Log.Log(LogLevel.Info, $"Auto Stamina OFF; binding válido={_input.StaminaBindingValid}; {_input.StaminaBindingStatus}; {_input.StaminaBindingProblem}");
             _automation = new ResponsiveAutomationLoop(Step, ex =>
@@ -249,7 +235,7 @@ public sealed class LiveContext : IDisposable
             // Consent changes never replay an old trigger or append keys to an in-progress sequence.
             ResetPunish();
             _authorized = authorized;
-            Log.Log(LogLevel.Info, $"Combo {string.Join(" → ", Config.Live.PunishKeys)} + giro Sub {(authorized ? "AUTORIZADOS — heurística" : "DESAUTORIZADOS")}; fluxo anterior cancelado", EventOrigin.Requested);
+            Log.Log(LogLevel.Info, $"Combo {string.Join(" → ", Config.Live.PunishKeys)} + giro preparatório {(authorized ? "AUTORIZADOS — heurística" : "DESAUTORIZADOS")}; fluxo anterior cancelado", EventOrigin.Requested);
         }
         _automation?.Wake();
     }
@@ -413,13 +399,17 @@ public sealed class LiveContext : IDisposable
                 return LiveSafetyGate.CheckTargetedModule(frame, now, _combatEnabled, _combatAuthorized,
                     foreground, emergency, text);
             }
-            var subTurn = LiveSafetyGate.CheckSubstitutionTurning(frame, now,
-                _subEnabled && PunishProfileApproved && _access.Allows(SubFeature), SubTurnConsent,
-                _subTurnWindow.IsOpen(frame, now), foreground, emergency, false, text);
-            if (subTurn.Allowed) return subTurn;
+            if (_preparingComboTurn)
+            {
+                var punish = CheckSafety(LiveInputKind.Punish);
+                return Punish?.State == EarlyPunishState.Executing && punish.Allowed
+                    ? LiveSafetyGate.CheckTargetedModule(frame, now, _subEnabled, CounterAttackAuthorized,
+                        foreground, emergency, text)
+                    : new(false, punish.Allowed ? "Combo não está executando" : punish.Reason);
+            }
             var regular = LiveSafetyGate.CheckTurning(frame, now, _autoEnabled && _access.Allows(AppFeature.AutoTurning), foreground,
                 Config.Live.TurnActivationKeys.Any(k => LiveInputController.IsDown(LiveKeySettings.Keys[k])), emergency, false, text);
-            return !regular.Allowed && SubstitutionTurningActive ? subTurn : regular;
+            return regular;
         }
         return kind == LiveInputKind.Punish
             ? LiveSafetyGate.CheckPunish(frame, now, _subEnabled, CounterAttackAuthorized, foreground, emergency, false, text)
@@ -475,12 +465,13 @@ public sealed class LiveContext : IDisposable
             return Math.Sqrt(Math.Pow(target.PositionX - p.PositionX, 2) + Math.Pow(target.PositionY - p.PositionY, 2)) > Config.CombatAssist.FollowStopDistance;
         }
         return (kind == LiveInputKind.Turning
-            ? (_preparingComboTurn || (SubstitutionTurningActive ? Punish?.HasTimeForTurn != false : Punish?.BlocksAutoTurning != true))
+            ? (_preparingComboTurn ? Punish?.State == EarlyPunishState.Executing &&
+                Punish.TriggerBuffsRemainAbsent(current) &&
+                (_comboTargetId is null || _comboTargetId == current.Snapshot.Target?.Id)
+                : Punish?.BlocksAutoTurning != true)
             : Punish?.State == EarlyPunishState.Executing) &&
         (kind == LiveInputKind.Punish ? Punish?.TriggerBuffsRemainAbsent(current) == true
-            : current.Snapshot.Target?.Id == dispatch.Snapshot.Target?.Id &&
-                !(SubstitutionTurningActive == false && _subEnabled && CounterAttackAuthorized &&
-                    dispatch.SubstitutionActive && !current.SubstitutionActive));
+            : current.Snapshot.Target?.Id == dispatch.Snapshot.Target?.Id);
     }
 
     private ActionResult DispatchCombat(CombatAction action, string key)
@@ -536,7 +527,8 @@ public sealed class LiveContext : IDisposable
         if (_disposed || _comboFacing is null || !CheckSafety(LiveInputKind.Punish).Allowed)
             return ActionResult.Rejected("Preparação de giro bloqueada por segurança");
         // Runs on the same serialized automation worker, immediately before EACH offensive key.
-        // Only priority arbitration is bypassed, NEVER the turn's foreground/target/key/window gate.
+        // Only priority arbitration and the ordinary Auto Turn activation key are bypassed;
+        // the combo's foreground, target, authorization and emergency gates remain active.
         _dispatchFrame = Frame;
         _preparingComboTurn = true;
         try
@@ -552,7 +544,6 @@ public sealed class LiveContext : IDisposable
     {
         Punish?.Reset();
         _comboFacing?.Reset();
-        _subTurnWindow.Reset();
         _comboTargetId = null;
         _punishWasArmed = false;
         _subReadBurst = false;
@@ -587,11 +578,6 @@ public sealed class LiveContext : IDisposable
         }
         var frame = Frame;
         var punishSafety = CheckSafety(LiveInputKind.Punish);
-        var subTurnGate = Provider?.Profile.PunishComboValidated == false && PunishProfileApproved &&
-            _access.Allows(SubFeature) && LiveSafetyGate.CheckTargetedModule(frame, _clock.NowMs,
-                _subEnabled, SubTurnConsent, Provider is not null && LiveInputController.IsGameForeground(Provider.ProcessId),
-                LiveInputController.EmergencyPending(), LiveInputController.TextEntryFocused()).Allowed;
-        _subTurnWindow.Update(frame, _clock.NowMs, punishSafety.Allowed || subTurnGate);
         var turnSafety = CheckSafety(LiveInputKind.Turning);
         TurningSafetyStatus = turnSafety.Reason;
         PunishSafetyStatus = punishSafety.Reason;
@@ -625,14 +611,15 @@ public sealed class LiveContext : IDisposable
         _punishWasArmed = punishSafety.Allowed;
         // No Ctrl dependency here. The engine deduplicates samples and cancels on its OWN gate only.
         Punish?.Update(frame, _subEnabled, CounterAttackAuthorized, punishSafety.Allowed, punishSafety.Reason);
-        _subReadBurst = punishSafety.Allowed && (SubstitutionTurningActive ||
+        if (Punish?.State is EarlyPunishState.Idle or EarlyPunishState.WatchingBuff or EarlyPunishState.Expired or EarlyPunishState.Cancelled)
+            _comboFacing?.Reset();
+        _subReadBurst = punishSafety.Allowed && (frame?.SubstitutionActive == true ||
             Punish?.State is EarlyPunishState.WatchingBuff or EarlyPunishState.RemovalPending or EarlyPunishState.Executing);
         var castGate = CheckSafety(LiveInputKind.CastTurning);
         CastTurn?.Update(frame, castGate.Allowed, SubNeedsPriority);
         CastTurnStatus = castGate.Allowed ? CastTurn?.Status ?? "Indisponível" : castGate.Reason;
         UpdateFollow();
-        var canRunTurn = CastTurn?.InFinalWindow != true &&
-            (SubstitutionTurningActive ? Punish?.HasTimeForTurn != false : Punish?.BlocksAutoTurning != true);
+        var canRunTurn = CastTurn?.InFinalWindow != true && Punish?.BlocksAutoTurning != true;
         if (turnSafety.Allowed && frame is not null && frame.CapturedAtMs != _lastTurnCapture && canRunTurn)
         {
             _lastTurnCapture = frame.CapturedAtMs;

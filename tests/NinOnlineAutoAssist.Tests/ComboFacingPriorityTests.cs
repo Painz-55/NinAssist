@@ -71,7 +71,6 @@ public sealed class ComboFacingPriorityTests
 
     [Theory]
     [InlineData("no-target")]
-    [InlineData("no-turn-permission")]
     [InlineData("already-facing")]
     public void NoUnnecessaryTurnOrDelayIsAdded(string condition)
     {
@@ -79,8 +78,20 @@ public sealed class ComboFacingPriorityTests
         var frame = Frame(0, condition == "already-facing" ? Direction.Up : Direction.Down);
         if (condition == "no-target") frame = frame with { Snapshot = frame.Snapshot with { Target = null } };
         var preparation = new ComboFacingCoordinator(new RecordingInputs(history), new SimulatedClock(0),
-            () => frame, () => condition != "no-turn-permission");
+            () => frame, () => true);
         Assert.True(preparation.BeforeAction().Accepted);
+        Assert.Empty(history);
+    }
+
+    [Fact]
+    public void DeniedPreparatoryTurnCannotReleaseOffensiveKeyToSelectedTarget()
+    {
+        var history = new List<string>();
+        var frame = Frame(0);
+        var input = new RecordingInputs(history);
+        var executor = new PreparedExecutor(new ComboFacingCoordinator(input, new SimulatedClock(0),
+            () => frame, () => false), input);
+        Assert.False(executor.Execute("basic_attack", "A").Accepted);
         Assert.Empty(history);
     }
 
@@ -101,7 +112,7 @@ public sealed class ComboFacingPriorityTests
     }
 
     [Fact]
-    public void RetriesAreRateLimitedAndFailedTurnNeverReleasesAnOffensiveKey()
+    public void UnconfirmedTurnIsNotRepeatedAndNeverReleasesAnOffensiveKey()
     {
         var clock = new SimulatedClock(0);
         var history = new List<string>();
@@ -114,10 +125,37 @@ public sealed class ComboFacingPriorityTests
         Assert.True(executor.Execute("basic_attack", "A").Retryable);
         Assert.Single(history);
         clock.Advance(20); frame = Frame(40); inputs.RejectTurn = true;
-        var rejected = executor.Execute("basic_attack", "A");
+        Assert.True(executor.Execute("basic_attack", "A").Retryable);
+        Assert.Equal(new[] { "Turn Up" }, history);
+    }
+
+    [Fact]
+    public void FailedInitialTurnNeverReleasesAnOffensiveKey()
+    {
+        var history = new List<string>();
+        var inputs = new RecordingInputs(history) { RejectTurn = true };
+        var frame = Frame(0);
+        var preparation = new ComboFacingCoordinator(inputs, new SimulatedClock(0), () => frame, () => true);
+        var rejected = new PreparedExecutor(preparation, inputs).Execute("basic_attack", "A");
         Assert.False(rejected.Accepted);
         Assert.False(rejected.Retryable);
-        Assert.Equal(new[] { "Turn Up", "Turn Up" }, history);
+        Assert.Equal(new[] { "Turn Up" }, history);
+    }
+
+    [Fact]
+    public void TargetChangeWhileAwaitingTurnCannotReleaseOffensiveKey()
+    {
+        var clock = new SimulatedClock(0);
+        var history = new List<string>();
+        var frame = Frame(0);
+        var inputs = new RecordingInputs(history);
+        var executor = new PreparedExecutor(new ComboFacingCoordinator(inputs, clock, () => frame, () => true), inputs);
+        Assert.True(executor.Execute("basic_attack", "A").Retryable);
+        clock.Advance(10);
+        frame = Frame(10, Direction.Up) with { Snapshot = Frame(10, Direction.Up).Snapshot with
+            { Target = new TargetInfo { Id = "other", IsTargeted = true, PositionY = -5 } } };
+        Assert.False(executor.Execute("basic_attack", "A").Accepted);
+        Assert.Equal(new[] { "Turn Up" }, history);
     }
 
     [Theory]
