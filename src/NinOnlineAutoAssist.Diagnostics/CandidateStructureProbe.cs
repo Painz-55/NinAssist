@@ -30,9 +30,24 @@ public static class CandidateStructureProbe
         var buff = actor.ReadObjectField(buffsName);
         var selected = globals.GetStaticFieldByName(targetName)?.ReadObject(domain);
         var map = roots.GetStaticFieldByName(mapName)?.ReadObject(domain);
+        var actorIntArrays = actor.Type!.Fields.Where(f => f.Type?.Name == "System.Int32[]")
+            .Select(f => {
+                try {
+                    var a = f.ReadObject(actor.Address, false);
+                    return a.IsArray && a.AsArray().Length is > 0 and <= 16
+                        ? new { f.Name, Values = a.AsArray().ReadValues<int>(0, a.AsArray().Length) } : null;
+                } catch { return null; }
+            }).Where(x => x is not null).ToArray();
         Console.WriteLine(JsonSerializer.Serialize(new
         {
             LocalIndex = index, BuffArrayLength = buff.IsArray ? buff.AsArray().Length : -1,
+            ActorIntArrays = actorIntArrays,
+            RootIntegers = roots.StaticFields.Where(f => f.Type?.Name == "System.Int32" && f.IsInitialized(domain))
+                .Select(f => { try { return new { f.Name, Value = f.Read<int>(domain) }; }
+                    catch { return null; } }).Where(x => x is not null).ToArray(),
+            GlobalBooleans = globals.StaticFields.Where(f => f.Type?.Name == "System.Boolean" && f.IsInitialized(domain))
+                .Select(f => { try { return new { f.Name, Value = f.Read<bool>(domain) }; }
+                    catch { return null; } }).Where(x => x is not null).ToArray(),
             BuffFields = Fields(buff.Type?.ComponentType),
             BuffEntries = buff.IsArray ? Enumerable.Range(0, Math.Min(buff.AsArray().Length, 256))
                 .Select(i => buff.AsArray().GetObjectValue(i)).Where(o => !o.IsNull)
@@ -46,6 +61,10 @@ public static class CandidateStructureProbe
                 .Where(f => f.Type?.Name == "System.Int32")
                 .Select(f => new { f.Name, Value = f.Read<int>(obj.Address, false) }).ToArray() : null,
             MapFields = Fields(map?.Type),
+            MapIntegers = map is { IsNull: false } mapObject ? mapObject.Type?.Fields
+                .Where(f => f.Type?.Name == "System.Int32")
+                .Select(f => { try { return new { f.Name, Value = f.Read<int>(mapObject.Address, false) }; }
+                    catch { return null; } }).Where(x => x is not null).ToArray() : null,
             Warning = "Candidates only; no target/buff semantics or input approved."
         }, new JsonSerializerOptions { WriteIndented = true }));
         return 0;

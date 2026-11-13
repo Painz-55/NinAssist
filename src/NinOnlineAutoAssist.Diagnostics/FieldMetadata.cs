@@ -53,4 +53,20 @@ public sealed class FieldMetadata : ISignatureTypeProvider<string, object?>
             .Select(t => new TypeEntry(Full(md, t.Handle), t.Type.GetFields().Select(h => md.GetFieldDefinition(h))
                 .Select(f => new FieldEntry(md.GetString(f.Name), f.DecodeSignature(provider, (object?)null))).ToArray())).ToArray();
     }
+
+    public static TypeEntry ReadType(string path, string fullName)
+    {
+        using var stream = File.OpenRead(path);
+        using var pe = new PEReader(stream);
+        var md = pe.GetMetadataReader();
+        var provider = new FieldMetadata();
+        foreach (var handle in md.TypeDefinitions)
+        {
+            var type = md.GetTypeDefinition(handle);
+            if (Full(md, handle) != fullName) continue;
+            return new TypeEntry(fullName, type.GetFields().Select(h => md.GetFieldDefinition(h))
+                .Select(f => new FieldEntry(md.GetString(f.Name), f.DecodeSignature(provider, (object?)null))).ToArray());
+        }
+        throw new InvalidOperationException($"Type not found: {fullName}");
+    }
 }

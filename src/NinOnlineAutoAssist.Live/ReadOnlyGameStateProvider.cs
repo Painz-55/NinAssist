@@ -314,7 +314,8 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
     {
         if (Profile.SelectedTarget is not { } fields)
         {
-            var index = StaticInt(globals, Profile.SelectedIndex, domain);
+            var index = StaticInt(globals, Profile.SelectedIndex ??
+                throw new InvalidOperationException("Legacy selected index unavailable"), domain);
             return (index, index, 0, 0);
         }
         var field = globals.GetStaticFieldByName(fields.GlobalObject) ?? throw new InvalidOperationException("Target object unavailable");

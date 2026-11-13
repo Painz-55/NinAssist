@@ -18,8 +18,8 @@ public static class SignedProfileCatalog
 
     private static readonly string[] RequiredNames =
     [
-        "Id", "Sha256", "CommonSha256", "Roots", "Globals", "Players", "LocalIndex", "SelectedIndex",
-        "Name", "Village", "Map", "PixelX", "PixelY", "Facing", "Vitals", "MaxVitals", "Running",
+        "Id", "Sha256", "CommonSha256", "Roots", "Globals", "Players", "LocalIndex",
+        "Name", "Map", "PixelX", "PixelY", "Facing", "Vitals", "MaxVitals", "Running",
         "Buffs", "BuffActive", "BuffName", "BuffDuration", "MapRoot", "MapIdentity", "Tiles", "Projectiles"
     ];
     private static readonly string[] CastNames = ["GlobalSpell", "GlobalStart", "GameClock", "PlayerSpell", "PlayerEnd"];
@@ -65,8 +65,14 @@ public static class SignedProfileCatalog
             {
                 foreach (var name in TargetNames) RequireField(selected, name);
                 if (selected.GetProperty("PlayerKind").GetInt32() is < 0 or > 16) throw new InvalidOperationException("Invalid target kind");
+                // Existing signed profiles retain a legacy index; new typed-target profiles may omit it.
+                var legacyIndex = element.GetProperty("SelectedIndex");
+                if (legacyIndex.ValueKind != JsonValueKind.Null) RequireField(element, "SelectedIndex");
             }
-            else if (selected.ValueKind != JsonValueKind.Null) throw new InvalidOperationException("Invalid target schema");
+            else if (selected.ValueKind == JsonValueKind.Null) RequireField(element, "SelectedIndex");
+            else throw new InvalidOperationException("Invalid target schema");
+            var village = element.GetProperty("Village");
+            if (village.ValueKind != JsonValueKind.Null) RequireField(element, "Village");
             // A publisher must explicitly mark a passively validated mapping as safe for keyboard dispatch.
             _ = element.GetProperty("ActuationValidated").GetBoolean();
             _ = element.GetProperty("MapIdentityInRoots").GetBoolean();

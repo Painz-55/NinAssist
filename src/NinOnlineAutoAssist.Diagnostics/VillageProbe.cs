@@ -8,10 +8,22 @@ namespace NinOnlineAutoAssist.Diagnostics;
 /// <summary>Passive calibration only. Byte candidates are NOT assumed to be village fields.</summary>
 public static class VillageProbe
 {
-    public static int Run(int pid, string character)
+    public static int Run(int pid, string character, string? calibrationPath = null)
     {
-        using var provider = new ReadOnlyGameStateProvider(pid, character, new SystemMonotonicClock());
-        if (provider.GetSnapshot() is null) { Console.Error.WriteLine(provider.Status); return 1; }
+        GameMemoryProfile? profileOverride = null;
+        if (calibrationPath is not null)
+        {
+            profileOverride = JsonSerializer.Deserialize<GameMemoryProfile>(File.ReadAllText(calibrationPath))
+                ?? throw new InvalidOperationException("Missing calibration profile");
+            if (!profileOverride.ExternalProfile || profileOverride.ActuationValidated ||
+                profileOverride.ValidatedInputKinds.Length != 0 || profileOverride.ValidatedAttackModes.Length != 0)
+                throw new InvalidOperationException("Village survey requires input-disabled local profile");
+        }
+        using var provider = profileOverride is null
+            ? new ReadOnlyGameStateProvider(pid, character, new SystemMonotonicClock())
+            : new ReadOnlyGameStateProvider(pid, character, new SystemMonotonicClock(), profileOverride);
+        for (var attempt = 0; attempt < 5 && provider.GetSnapshot() is null; attempt++) Thread.Sleep(100);
+        if (provider.Frame is null) { Console.Error.WriteLine(provider.Status); return 1; }
         using var target = DataTarget.AttachToProcess(pid, suspend: false);
         using var runtime = target.ClrVersions.Single().CreateRuntime();
         var module = runtime.EnumerateModules().Single(m => Path.GetFileName(m.Name) == "NinOnline.dll");

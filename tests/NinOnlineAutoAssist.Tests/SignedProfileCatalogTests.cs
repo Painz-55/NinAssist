@@ -177,6 +177,29 @@ public sealed class SignedProfileCatalogTests
         Assert.Equal(1, updated.SelectedTarget?.PlayerKind);
     }
 
+    [Fact]
+    public void NovemberThirteenthBuildUsesTypedTargetWithoutLegacyIndexAndStaysBundledOnly()
+    {
+        var directory = Path.Combine(AppContext.BaseDirectory, "compatibility");
+        var game = "5EBCBDBB46FA2A1E124C2DF55277C2E61D1C3D02C2B0C4A87B0C2D66124B20CB";
+        var common = "BC5C93AF9A871523C197DE7D3BEBCF767C179DC7C187C78E8E8A87C31335CABE";
+        GameMemoryProfile? Select(string name) => SignedProfileCatalog.VerifyAndSelect(
+            File.ReadAllBytes(Path.Combine(directory, name + ".json")),
+            Convert.FromBase64String(File.ReadAllText(Path.Combine(directory, name + ".json.sig")).Trim()),
+            SignedProfileCatalog.PublicKey, game, common);
+        Assert.Null(Select("profiles"));
+        var updated = Assert.IsType<GameMemoryProfile>(Select("package-profiles"));
+        Assert.True(updated.ActuationValidated);
+        Assert.Equal(7, updated.ValidatedInputKinds.Length);
+        Assert.Null(updated.SelectedIndex);
+        Assert.Equal("KqGq8aM0LF0", updated.Village);
+        Assert.Equal(1, updated.SelectedTarget?.PlayerKind);
+        Assert.True(updated.ApprovesAttackMode("Melee"));
+        Assert.True(updated.ApprovesAttackMode("Fan"));
+        Assert.False(updated.ApprovesAttackMode("HisuyFan"));
+        Assert.True(updated.PunishComboRequiresTarget);
+    }
+
     private static (byte[] Payload, byte[] Signature, string PublicKey) Sign(object document)
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -196,6 +219,29 @@ public sealed class SignedProfileCatalogTests
         Assert.False(found.ActuationValidated);
         Assert.Null(SignedProfileCatalog.VerifyAndSelect(signed.Payload, signed.Signature, signed.PublicKey,
             p.Sha256, GameMemoryProfile.Steam.CommonSha256));
+    }
+
+    [Fact]
+    public void TypedTargetCanOmitUnusedLegacyIndexAndUnknownVillageWithoutInheritingDefaults()
+    {
+        var p = GameMemoryProfile.Updated20261104 with { SelectedIndex = null, Village = null,
+            ActuationValidated = false, ValidatedInputKinds = [], ValidatedAttackModes = [] };
+        var signed = Sign(new { schema = 1, profiles = new[] { p } });
+        var found = SignedProfileCatalog.VerifyAndSelect(signed.Payload, signed.Signature, signed.PublicKey,
+            p.Sha256, p.CommonSha256)!;
+        Assert.Null(found.SelectedIndex);
+        Assert.Null(found.Village);
+        Assert.NotNull(found.SelectedTarget);
+        Assert.False(found.ActuationValidated);
+    }
+
+    [Fact]
+    public void LegacyTargetWithoutSelectedIndexIsRejected()
+    {
+        var p = GameMemoryProfile.Updated20261104 with { SelectedTarget = null, SelectedIndex = null };
+        var signed = Sign(new { schema = 1, profiles = new[] { p } });
+        Assert.ThrowsAny<Exception>(() => SignedProfileCatalog.VerifyAndSelect(
+            signed.Payload, signed.Signature, signed.PublicKey, p.Sha256, p.CommonSha256));
     }
 
     [Fact]

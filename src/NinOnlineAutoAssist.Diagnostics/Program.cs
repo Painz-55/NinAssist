@@ -13,6 +13,8 @@ if (args.Length == 4 && args[0] == "--cast-state-trace" && int.TryParse(args[1],
     return CastStateTrace.Run(castPid, args[2], castSeconds);
 if (args.Length == 3 && args[0] == "--village-probe" && int.TryParse(args[1], out var villagePid))
     return VillageProbe.Run(villagePid, args[2]);
+if (args.Length == 4 && args[0] == "--village-probe-calibration" && int.TryParse(args[1], out var calibrationVillagePid))
+    return VillageProbe.Run(calibrationVillagePid, args[2], args[3]);
 if (args.Length == 3 && args[0] == "--projectile-catalog" && int.TryParse(args[1], out var catalogPid))
     return ProjectileCatalogProbe.Run(catalogPid, args[2]);
 if (args.Length == 3 && args[0] == "--watch-local-projectiles" && int.TryParse(args[1], out var projectilePid))
@@ -22,6 +24,11 @@ if (args.Length == 2 && args[0] == "--profile-candidates" && int.TryParse(args[1
     return ProfileCandidateProbe.Run(candidatePid);
 if (args.Length == 4 && args[0] == "--identify-player-candidates" && int.TryParse(args[1], out var identityPid))
     return ProfileCandidateProbe.Identify(identityPid, args[2], args[3]);
+if (args.Length == 7 && args[0] == "--target-selection-survey" && int.TryParse(args[1], out var selectionPid))
+    return TargetSelectionSurvey.Run(selectionPid, args[2], args[3], args[4], args[5], args[6]);
+if (args.Length == 5 && args[0] == "--passive-cast-survey" && int.TryParse(args[1], out var passiveCastPid) &&
+    int.TryParse(args[4], out var passiveCastSeconds))
+    return PassiveCastSurvey.Run(passiveCastPid, args[2], args[3], passiveCastSeconds);
 if (args.Length == 11 && args[0] == "--candidate-structures" && int.TryParse(args[1], out var structurePid))
     return CandidateStructureProbe.Run(structurePid, args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10]);
 if (args.Length == 3 && args[0] == "--trace-player-movement" && int.TryParse(args[1], out var movementPid))
@@ -73,6 +80,11 @@ if (args.Length == 4 && args[0] == "--signed-profile-snapshot" && int.TryParse(a
     return provider.Frame is null ? 1 : 0;
 }
 if (args.Length == 2 && args[0] == "--field-metadata") return FieldMetadata.Run(args[1]);
+if (args.Length == 3 && args[0] == "--type-fields")
+{
+    Console.WriteLine(JsonSerializer.Serialize(FieldMetadata.ReadType(args[1], args[2])));
+    return 0;
+}
 if (args.Length == 5 && args[0] == "--profile-schema-diff")
     return ProfileSchemaDiff.Run(args[1], args[2], args[3], args[4]);
 if (args.Length == 3 && args[0] == "--capture-profile-baseline")

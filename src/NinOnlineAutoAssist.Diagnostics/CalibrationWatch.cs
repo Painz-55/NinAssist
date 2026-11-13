@@ -30,11 +30,18 @@ public static class CalibrationWatch
                 frames++;
                 if (provider.Navigation is not null) navigation++;
                 if (provider.MapPlayers is not null) mapPlayers++;
-                var stamp = new { frame.Map, Stamina = frame.Stamina?.Current,
+                var stamp = new { frame.Map, frame.Snapshot.Player.Id,
+                    frame.Snapshot.Player.PositionX, frame.Snapshot.Player.PositionY,
+                    frame.Snapshot.Player.Facing, frame.Snapshot.Player.IsAlive,
+                    Stamina = frame.Stamina?.Current,
                     Maximum = frame.Stamina?.Maximum, Running = frame.Stamina?.Running,
-                    TargetSelected = frame.Snapshot.Target is not null,
+                    Target = frame.Snapshot.Target?.Id,
                     CastId = frame.Cast is { Active: true } cast ? cast.SpellId : 0,
                     frame.SubstitutionActive, frame.SubstitutionDuration,
+                    NavigationMap = provider.Navigation?.Map,
+                    NavigationKnown = provider.Navigation?.DynamicHazardsKnown,
+                    NavigationStatus = provider.NavigationStatus,
+                    MapPlayers = provider.MapPlayers?.Players.Count,
                     Buffs = frame.ObservedActiveBuffs.OrderBy(b => b.Name)
                         .Select(b => new { b.Name, b.RemainingSeconds }).ToArray() };
                 var signature = JsonSerializer.Serialize(stamp);

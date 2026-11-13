@@ -22,7 +22,8 @@ public sealed record GameMemoryProfile
     public string Globals { get; init; } = LiveMemoryProfile.Globals;
     public string Players { get; init; } = LiveMemoryProfile.Players;
     public string LocalIndex { get; init; } = LiveMemoryProfile.LocalIndex;
-    public string SelectedIndex { get; init; } = LiveMemoryProfile.SelectedIndex;
+    // Legacy-only fallback. New profiles using SelectedTarget must explicitly set this to null.
+    public string? SelectedIndex { get; init; } = LiveMemoryProfile.SelectedIndex;
     public SelectedTargetMemoryFields? SelectedTarget { get; init; }
     public string Name { get; init; } = LiveMemoryProfile.Name;
     // Null until calibrated for this exact fingerprint; never guess by field order or player name.

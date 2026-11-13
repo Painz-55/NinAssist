@@ -2,3 +2,5 @@
 * text=auto
 compatibility/profiles.json text eol=lf
 compatibility/profiles.json.sig text eol=lf
+compatibility/package-profiles.json text eol=lf
+compatibility/package-profiles.json.sig text eol=lf
