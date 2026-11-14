@@ -121,7 +121,7 @@ public sealed class LiveContext : IDisposable
                 _dispatchFrame = Frame; _dispatchingCastTurn = true;
                 try
                 {
-                    var result = _input.RequestCastTurn(direction, config.AutoCastTurn.LeadTimeMs + 50);
+                    var result = _input.RequestCastTurn(direction, config.AutoCastTurn.LeadTimeMs + 70);
                     Log.Log(result.Accepted ? LogLevel.Info : LogLevel.Warning,
                         $"Auto Cast Turn: {direction} · {result.Reason}; efeito/aceitação da magia não confirmados", EventOrigin.Requested);
                     return result;

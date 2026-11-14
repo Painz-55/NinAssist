@@ -50,6 +50,65 @@ public static class PassiveCastSurvey
                     ? f.Read<long>(domain) : f.Read<int>(domain); } catch { }
             foreach (var f in actor.Type!.Fields.Where(f => f.Type?.Name == "System.Int32"))
                 try { current["A:" + f.Name] = f.Read<int>(actor.Address, false); } catch { }
+            foreach (var f in globals.StaticFields.Where(f => f.IsInitialized(domain) && f.Type?.Name == "System.Boolean"))
+                try { current["G:" + f.Name] = f.Read<bool>(domain) ? 1 : 0; } catch { }
+            foreach (var f in actor.Type!.Fields.Where(f => f.Type?.Name == "System.Byte"))
+                try { current["A:" + f.Name] = f.Read<byte>(actor.Address, false); } catch { }
+            if (profile.SelectedTarget is { } selected)
+            {
+                try
+                {
+                    var obj = globals.GetStaticFieldByName(selected.GlobalObject)!.ReadObject(domain);
+                    current["T:Kind"] = obj.IsNull ? 0 : obj.ReadField<int>(selected.Kind);
+                    current["T:Index"] = obj.IsNull ? 0 : obj.ReadField<int>(selected.Index);
+                    current["T:ReadError"] = 0;
+                }
+                catch { current["T:ReadError"] = 1; }
+            }
+            try
+            {
+                var buffs = actor.ReadObjectField(profile.Buffs).AsArray();
+                var active = 0; var substitution = -1;
+                if (buffs.Length > 256) throw new InvalidOperationException("Buff array too large");
+                for (var i = 0; i < buffs.Length; i++)
+                {
+                    var buff = buffs.GetObjectValue(i);
+                    if (buff.IsNull || buff.ReadField<int>(profile.BuffActive) != 1) continue;
+                    active++;
+                    if (buff.ReadStringField(profile.BuffName, 128) == "Substitution Technique")
+                        substitution = buff.ReadField<int>(profile.BuffDuration);
+                }
+                current["B:ActiveCount"] = active;
+                current["B:SubstitutionDuration"] = substitution;
+                current["B:ReadError"] = 0;
+            }
+            catch { current["B:ReadError"] = 1; }
+            try
+            {
+                var projectiles = roots.GetStaticFieldByName(profile.Projectiles)!.ReadObject(domain).AsArray();
+                if (projectiles.Length is < 1 or > 8192) throw new InvalidOperationException("Projectile array size");
+                var active = 0; var own = 0; var other = 0; var unreadable = 0;
+                for (var i = 0; i < projectiles.Length; i++)
+                {
+                    var projectile = projectiles.GetObjectValue(i);
+                    if (projectile.IsNull) continue;
+                    try
+                    {
+                        var owner = projectile.ReadField<int>("Owner");
+                        if (owner == 0) continue;
+                        active++;
+                        if (owner == index && projectile.ReadField<int>("OwnerType") == 1) own++;
+                        else other++;
+                    }
+                    catch { unreadable++; }
+                }
+                current["P:Active"] = active;
+                current["P:Own"] = own;
+                current["P:Other"] = other;
+                current["P:Unreadable"] = unreadable;
+                current["P:ReadError"] = 0;
+            }
+            catch { current["P:ReadError"] = 1; }
             var changed = previous is null ? current : current.Where(x =>
                 !previous.TryGetValue(x.Key, out var old) || old != x.Value)
                 .ToDictionary(x => x.Key, x => x.Value);

@@ -88,9 +88,9 @@ public sealed class AutoCastTurnEngine
             cast.StartedAtGameMs != request.StartedAtGameMs || cast.TotalMs != request.TotalMs) return false;
         if (!TimingValid(frame, cast, now)) return false;
         var remaining = Remaining(frame, cast, now);
-        // Only an ALREADY-OWNED key may cross the estimated deadline, for at most 50ms and only while
+        // Only an ALREADY-OWNED key may cross the estimated deadline, for at most 70ms and only while
         // the same cast is still explicitly active. Idle/cancel/context loss always releases immediately.
-        if ((maintaining ? remaining < -50 : remaining <= 0) || remaining > Window(cast) || Desired(frame) != request.Direction)
+        if ((maintaining ? remaining < -70 : remaining <= 0) || remaining > Window(cast) || Desired(frame) != request.Direction)
             return false;
         // A held face key is not assumed to defeat movement in every game input poll. If a fresh
         // post-command sample still faces away after 40ms, end this hold so the engine can reapply it.

@@ -301,8 +301,8 @@ public sealed class AutoCastTurnTests
             Assert.True(engine!.CanMaintain(aligned, 300));
             Assert.False(engine.CanDispatch(aligned, 350));
             Assert.True(engine.CanMaintain(aligned, 350)); // deadline covered by an existing owned key
-            Assert.True(engine.CanMaintain(aligned, 399));
-            Assert.False(engine.CanMaintain(aligned, 401)); // <=50ms hard limit, even if actor flag is stuck
+            Assert.True(engine.CanMaintain(aligned, 420)); // At most 70ms past estimated completion.
+            Assert.False(engine.CanMaintain(aligned, 421)); // Hard limit, even if actor flag is stuck.
             Assert.False(engine.CanMaintain(Frame(320, Idle, Direction.Up), 320));
             Assert.False(engine.CanMaintain(Frame(320, null, Direction.Up), 320));
             Assert.False(engine.CanMaintain(Frame(320, Active(30, spell: 99), Direction.Up), 320));

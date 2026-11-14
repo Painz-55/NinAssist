@@ -132,7 +132,7 @@ internal sealed class LiveInputController : IOrientationController, IActionExecu
         : TurnResult.Rejected("Unsupported direction");
 
     public TurnResult RequestCastTurn(Direction direction, int maximumHoldMs) => _turns.TryGetValue(direction, out var key)
-        ? (Tap(key, extended: true, kind: LiveInputKind.CastTurning, holdMs: Math.Clamp(maximumHoldMs, 40, 300)) ? TurnResult.Ok(LastInputReason) : TurnResult.Rejected(LastInputReason))
+        ? (Tap(key, extended: true, kind: LiveInputKind.CastTurning, holdMs: Math.Clamp(maximumHoldMs, 40, 320)) ? TurnResult.Ok(LastInputReason) : TurnResult.Rejected(LastInputReason))
         : TurnResult.Rejected("Unsupported cast turn direction");
 
     public ActionResult Execute(string actionId, string key)

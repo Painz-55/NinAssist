@@ -1,5 +1,21 @@
 # Perfis de compatibilidade independentes do instalador
 
+## Fluxo rápido para a próxima atualização: uma captura manual
+
+**Antes** de a build assinada ser substituída, salve seu baseline uma vez:
+
+```powershell
+.\scripts\Passive-GameUpdate.ps1 -Mode Capture -GameDirectory 'D:\SteamLibrary\steamapps\common\Nin Online' -ProcessId <PID> -BaselineDirectory "$env:LOCALAPPDATA\NinAssist\calibration\BUILD_ATUAL"
+```
+
+Use uma pasta de baseline nova por build; o script não sobrescreve evidências. Para a build de 2026-11-14, o baseline já foi salvo em `%LOCALAPPDATA%\NinAssist\calibration\20261114-EB6F1AA2`. Depois do update, `-Mode Analyze -GameDirectory 'CAMINHO_NOVO' -BaselineDirectory 'MESMA_PASTA'` produz candidatos estáticos e passivos a partir desse baseline **com fingerprint**, sem aprovar campos por ordinal. O maintainer confere o par novo, identifica o personagem e prepara um JSON de **calibração somente leitura** fora do Git (`ExternalProfile=true`, `ActuationValidated=false`, listas de inputs vazias, combo false). Com jogo/assistente em estado seguro, use **uma única janela**:
+
+```powershell
+.\scripts\Integrated-GameUpdate.ps1 -GameDirectory 'D:\SteamLibrary\steamapps\common\Nin Online' -ProcessId <PID> -Character StormFin -CandidateProfilePath 'CAMINHO_FORA_DO_GIT\candidate-read-only.json' -Seconds 120
+```
+
+O usuário faz manualmente, nessa janela: repouso sem alvo; quatro direções; Run ON/OFF; Substitution até expirar; seleção/limpeza de jogador consentido e NPC; cast visível; projétil próprio/ameaça **somente se seguro**. O script captura provider e transições brutas simultâneas, inclusive kind/index do alvo, buff, ownership de projéteis, cast, mapa, Run e direção. `summary.json` é apenas um índice; os relatórios brutos e a confirmação visual devem ser revisados. Se algum evento não aparecer, marcar **pendente** em vez de inferir que funcionou. Não assinar, instalar, habilitar inputs nem publicar com base só em candidatos. Depois da aprovação independente de leitura e ensaio local dos inputs autorizados, incluir o novo perfil apenas no pacote se clientes antigos não conhecem os gates; manter feed legado intocado. Sempre preparar novo baseline enquanto o perfil assinado ainda corresponder à build corrente.
+
 O app 1.1.4+ verifica o perfil assinado incluído no pacote e, se não encontrar o par de DLLs, busca `profiles.json` e `profiles.json.sig` em `main/compatibility`. A assinatura ECDSA P-256/SHA-256 é verificada antes de analisar os campos. A chave pública está no aplicativo; a chave privada **nunca** vai para Git, Firebase ou cliente. Um perfil só pode ir ao feed remoto se **todas as versões antigas ainda instaláveis** entenderem os gates e restrições desse perfil. Caso contrário, publique primeiro um novo executável com o perfil somente no pacote. O app 1.1.0/1.1.1 não conhece esse canal e precisa atualizar para 1.1.4 primeiro.
 
 `profiles.json` é o **feed remoto legado** e permanece sem a build 2026-11-06: o cliente 1.1.7 busca esse arquivo diretamente e não conhece os novos gates do combo. `package-profiles.json` e `.sig` são copiados pelo projeto App como `compatibility/profiles.json` e `.sig` **somente dentro do novo executável/pacote**. Não copie o perfil novo para o feed remoto enquanto clientes antigos puderem usá-lo. Os dois manifestos são assinados separadamente. Uma assinatura não prova, por si só, que nomes ofuscados representam o que parecem representar. Não copie hashes novos para um perfil antigo. `ActuationValidated: false` e `ValidatedInputKinds: []` permitem apenas leituras passivas. Para `true`, liste em `ValidatedInputKinds` **somente** as ações validadas (`Turning`, `Punish`, `Attack`, `Tool`, `Follow`, `Stamina`, `CastTurning`) e confirme explicitamente ao assinar. Cada ação não listada fica bloqueada. Mudanças estruturais ou sinais ambíguos continuam bloqueadas. Nunca use a lista de jogadores próximos para inferir identidade local.
