@@ -246,6 +246,29 @@ public sealed class SignedProfileCatalogTests
         Assert.Equal(1, updated.SelectedTarget?.PlayerKind);
     }
 
+    [Fact]
+    public void NovemberFifteenthBuildIsBundledOnlyWithTargetGateAndHisuyBlocked()
+    {
+        var directory = Path.Combine(AppContext.BaseDirectory, "compatibility");
+        const string game = "3B1AAF914AE0EA2268CEE6C6E95960C2A04CDAC383E0C540D98752B12EF96842";
+        const string common = "815EA88CBD97949D1A9671990AF71C853D28DF89E8F286F837E0E64049D6FE44";
+        GameMemoryProfile? Select(string name) => SignedProfileCatalog.VerifyAndSelect(
+            File.ReadAllBytes(Path.Combine(directory, name + ".json")),
+            Convert.FromBase64String(File.ReadAllText(Path.Combine(directory, name + ".json.sig")).Trim()),
+            SignedProfileCatalog.PublicKey, game, common);
+        Assert.Null(Select("profiles"));
+        var updated = Assert.IsType<GameMemoryProfile>(Select("package-profiles"));
+        Assert.True(updated.ActuationValidated);
+        Assert.Equal(7, updated.ValidatedInputKinds.Length);
+        Assert.True(updated.ApprovesAttackMode("Melee"));
+        Assert.True(updated.ApprovesAttackMode("Fan"));
+        Assert.False(updated.ApprovesAttackMode("HisuyFan"));
+        Assert.True(updated.PunishComboValidated);
+        Assert.True(updated.PunishComboRequiresTarget);
+        Assert.Null(updated.SelectedIndex);
+        Assert.Equal(1, updated.SelectedTarget?.PlayerKind);
+    }
+
     private static (byte[] Payload, byte[] Signature, string PublicKey) Sign(object document)
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
