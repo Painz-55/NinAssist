@@ -36,12 +36,18 @@ public static class CalibrationWatch
                     Stamina = frame.Stamina?.Current,
                     Maximum = frame.Stamina?.Maximum, Running = frame.Stamina?.Running,
                     Target = frame.Snapshot.Target?.Id,
+                    TargetPosition = frame.Snapshot.Target is { } selected ?
+                        new { selected.PositionX, selected.PositionY } : null,
                     CastId = frame.Cast is { Active: true } cast ? cast.SpellId : 0,
                     frame.SubstitutionActive, frame.SubstitutionDuration,
                     NavigationMap = provider.Navigation?.Map,
                     NavigationKnown = provider.Navigation?.DynamicHazardsKnown,
                     NavigationStatus = provider.NavigationStatus,
                     MapPlayers = provider.MapPlayers?.Players.Count,
+                    PlayerRecords = provider.MapPlayers?.Players.Take(64).Select(p =>
+                        new { p.Slot, p.Name, p.X, p.Y, p.IsLocal, p.IsSelected }).ToArray(),
+                    MapUnreadable = provider.MapPlayers?.UnreadableSlots,
+                    Grid = provider.MapPlayers is { } list ? new { list.GridWidth, list.GridHeight } : null,
                     Buffs = frame.ObservedActiveBuffs.OrderBy(b => b.Name)
                         .Select(b => new { b.Name, b.RemainingSeconds }).ToArray() };
                 var signature = JsonSerializer.Serialize(stamp);

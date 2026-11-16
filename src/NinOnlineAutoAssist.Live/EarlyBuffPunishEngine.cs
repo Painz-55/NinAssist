@@ -16,6 +16,8 @@ public sealed record EarlyPunishOptions
     public long TriggerDelayMs { get; init; } = 0;
     public long? SecondToThirdMs { get; init; }
     public long SequenceTimeoutMs { get; init; } = 1500;
+    // Null preserves historical engine fixtures; the live app explicitly restricts this to Tai/Water.
+    public string[]? EligibleSources { get; init; }
 }
 
 /// <summary>
@@ -30,6 +32,7 @@ public sealed class EarlyBuffPunishEngine : ILivePunishEngine
     private readonly IMonotonicClock _clock;
     private readonly IAutoAssistLogger _log;
     private readonly EarlyPunishOptions _options;
+    private readonly HashSet<string>? _eligibleSources;
     private LiveFrame? _previous;
     private readonly SubstitutionRemovalTracker _tracker = new();
     private readonly HashSet<string> _triggerSources = new(StringComparer.Ordinal);
@@ -39,13 +42,16 @@ public sealed class EarlyBuffPunishEngine : ILivePunishEngine
     public string Status { get; private set; } = "Aguardando buff; remoção antecipada é uma HEURÍSTICA";
     public long? EstimatedRemainingAtRemovalMs { get; private set; }
     public IReadOnlyList<string> TriggerSources => _triggerSources.ToArray();
+    private bool Eligible(string name) => _eligibleSources?.Contains(name) ?? true;
+    private IReadOnlyList<ObservedBuff> EligibleBuffs(LiveFrame frame) =>
+        SubstitutionBuffs.Active(frame).Where(b => Eligible(b.Name)).ToArray();
     public bool TriggerBuffsRemainAbsent(LiveFrame frame) => _triggerSources.Count > 0 &&
-        !SubstitutionBuffs.Active(frame).Any(b => _triggerSources.Contains(b.Name));
+        !EligibleBuffs(frame).Any(b => _triggerSources.Contains(b.Name));
     public bool HasUnprocessedRemoval(LiveFrame? frame)
     {
         if (frame is null || _previous is not { } before || frame.CapturedAtMs <= before.CapturedAtMs) return false;
-        var current = SubstitutionBuffs.Active(frame);
-        return SubstitutionBuffs.Active(before).Any(old => !current.Any(buff => buff.Name == old.Name));
+        var current = EligibleBuffs(frame);
+        return EligibleBuffs(before).Any(old => !current.Any(buff => buff.Name == old.Name));
     }
     public long? NextKeyDueAtMs => State != EarlyPunishState.Executing ? null : _nextKey switch
     {
@@ -75,6 +81,12 @@ public sealed class EarlyBuffPunishEngine : ILivePunishEngine
             (_options.FirstToSecondMs ?? _options.KeyIntervalMs) + (_options.SecondToThirdMs ?? _options.KeyIntervalMs) >= _options.SequenceTimeoutMs)
             throw new ArgumentException("Invalid combo keys or transition delays.");
         _options = _options with { ComboKeys = _options.ComboKeys.ToArray() };
+        if (_options.EligibleSources is { } sources)
+        {
+            if (sources.Any(name => !SubstitutionBuffs.IsPunishEligible(name)) || sources.Distinct(StringComparer.Ordinal).Count() != sources.Length)
+                throw new ArgumentException("Only distinct Tai/Water buffs may be restricted counterattack sources.");
+            _eligibleSources = new HashSet<string>(sources, StringComparer.Ordinal);
+        }
     }
 
     public void Reset()
@@ -122,7 +134,7 @@ public sealed class EarlyBuffPunishEngine : ILivePunishEngine
 
         // Count each buff separately and consume simultaneous/late triggers once, never queue combos.
         var sample = before?.CapturedAtMs == frame.CapturedAtMs ? null
-            : _tracker.Update(frame, now, _options.EarlyExpiryMarginMs, _options.AbsentSamplesRequired);
+            : _tracker.Update(frame, now, _options.EarlyExpiryMarginMs, _options.AbsentSamplesRequired, Eligible);
 
         if (State == EarlyPunishState.Executing)
         {

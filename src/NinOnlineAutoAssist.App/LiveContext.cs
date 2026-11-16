@@ -64,6 +64,7 @@ public sealed class LiveContext : IDisposable
     private volatile bool _staminaEnabled, _castTurnEnabled;
     private bool _dispatchingCastTurn;
     public string CastTurnStatus { get; private set; } = "Auto Cast Turn OFF";
+    private string? _lastCastTurnDiagnostic;
     private bool _dispatchingStamina;
     private string? _lastStaminaSafety;
     private bool _punishWasArmed;
@@ -87,6 +88,9 @@ public sealed class LiveContext : IDisposable
     public string? ActionStatus => _input?.LastActionText;
     public LiveBuffObservation BuffObservation => LiveBuffObservation.FromFrame(Volatile.Read(ref _frame), _clock.NowMs);
     public LiveFrame? Frame => Volatile.Read(ref _frame) is { } frame && _clock.NowMs - frame.CapturedAtMs <= 500 ? frame : null;
+    public long ObservationNowMs => _clock.NowMs;
+    private volatile bool _overlayEnabled;
+    public void SetOverlayEnabled(bool enabled) => _overlayEnabled = enabled;
     public GameSnapshot? Snapshot() => Frame?.Snapshot;
 
     public LiveContext(AutoAssistConfig config, AccessLease access, bool detectCharacterAutomatically = false)
@@ -142,7 +146,8 @@ public sealed class LiveContext : IDisposable
                 FirstToSecondMs = config.Live.PunishFirstToSecondMs,
                 TriggerDelayMs = config.Live.PunishTriggerDelayMs,
                 SecondToThirdMs = config.Live.PunishSecondToThirdMs,
-                SequenceTimeoutMs = config.Live.PunishSequenceTimeoutMs
+                SequenceTimeoutMs = config.Live.PunishSequenceTimeoutMs,
+                EligibleSources = [SubstitutionBuffs.Tai, SubstitutionBuffs.Water]
             }, Log);
             Log.Log(LogLevel.Info, $"Modo escolhido: {LivePunishFactory.Name(config.Live.PunishMode)}; motores mutuamente exclusivos; início OFF");
             Combat = new AutoAttackToolEngine(_clock, config.CombatAssist, DispatchCombat, PrepareFanAttack);
@@ -160,7 +165,7 @@ public sealed class LiveContext : IDisposable
                 }
                 finally { _dispatchingStamina = false; }
             }, config.CombatAssist.StaminaDisableBelowPercent, config.CombatAssist.StaminaEnableAbovePercent);
-            Log.Log(LogLevel.Info, $"Live connection: PID {pid}, character {(detectCharacterAutomatically ? "detecção automática pelo índice local" : config.Live.CharacterName)}; modules OFF; Turn activation: {string.Join(" / ", config.Live.TurnActivationKeys)}; Sub não gira durante buff; giro apenas antes da tecla do combo; combo {string.Join(" → ", config.Live.PunishKeys)} {(CounterAttackAuthorized ? "authorized" : "DISABLED")}");
+            Log.Log(LogLevel.Info, $"Live connection: PID {pid}, character {(detectCharacterAutomatically ? "detecção automática pelo índice local" : config.Live.CharacterName)}; modules OFF; Turn activation: {string.Join(" / ", config.Live.TurnActivationKeys)}; SubPunish somente Tai/Água; Sub normal (decoy) nunca dispara combo; combo {string.Join(" → ", config.Live.PunishKeys)} {(CounterAttackAuthorized ? "authorized" : "DISABLED")}");
             Log.Log(LogLevel.Info, $"AA/Tool OFF e desautorizado: {config.CombatAssist.AttackKey} {CombatGeometry.DescribeAttack(config.CombatAssist)} / Tool {config.CombatAssist.ToolKey} frontal <= {config.CombatAssist.ToolRange} tiles; Follow OFF, tecla {config.CombatAssist.FollowHoldKey}");
             Log.Log(LogLevel.Info, $"Auto Stamina OFF; binding válido={_input.StaminaBindingValid}; {_input.StaminaBindingStatus}; {_input.StaminaBindingProblem}");
             _automation = new ResponsiveAutomationLoop(Step, ex =>
@@ -181,14 +186,17 @@ public sealed class LiveContext : IDisposable
                     while (!_stop.IsCancellationRequested)
                     {
                         var followHeld = _access.Allows(AppFeature.Follow) && _followEnabled && LiveInputController.IsDown(LiveKeySettings.Keys[Config.CombatAssist.FollowHoldKey]);
+                        // Avoid expensive terrain/census reads while observing a short cast bar.
+                        // They resume when the cast ends; no stale map data may authorize inputs.
+                        var castReadBurst = _castTurnEnabled && Provider.Frame?.Cast?.Active == true;
                         var oldNavigation = Volatile.Read(ref _navigation);
-                        Provider.ReadNavigation = !_subReadBurst && followHeld && (oldNavigation is null ||
+                        Provider.ReadNavigation = !_subReadBurst && !castReadBurst && followHeld && (oldNavigation is null ||
                             oldNavigation.Map != Volatile.Read(ref _frame)?.Map || _clock.NowMs - oldNavigation.CapturedAtMs >= 100);
                         var oldList = Volatile.Read(ref _mapPlayers);
                         // Map census is display-only and relatively expensive. During a live Substitution
                         // window, prioritize distinct buff samples over refreshing the display list.
-                        Provider.ReadMapPlayers = !_subReadBurst && _access.Allows(AppFeature.MapPlayers) && (oldList is null || oldList.Map != Volatile.Read(ref _frame)?.Map ||
-                            _clock.NowMs - oldList.CapturedAtMs >= 200);
+                        Provider.ReadMapPlayers = !_subReadBurst && !castReadBurst && _access.Allows(AppFeature.MapPlayers) && (oldList is null || oldList.Map != Volatile.Read(ref _frame)?.Map ||
+                            _clock.NowMs - oldList.CapturedAtMs >= (_overlayEnabled ? 80 : 200));
                         if (!_access.Allows(AppFeature.MapPlayers)) Volatile.Write(ref _mapPlayers, null);
                         Provider.GetSnapshot();
                         Volatile.Write(ref _frame, Provider.Frame);
@@ -201,8 +209,8 @@ public sealed class LiveContext : IDisposable
                         // Never skip FlushCachedData or reuse managed object addresses to gain speed.
                         var urgent = LiveInputController.IsGameForeground(Provider.ProcessId) &&
                             ((_castTurnEnabled && Provider.Frame?.Cast?.Active == true) ||
-                            (_combatEnabled || followHeld || (_subEnabled && CounterAttackAuthorized &&
-                                (Provider.Frame?.SubstitutionActive == true || _subReadBurst)) ||
+                             (_combatEnabled || followHeld || (_subEnabled && CounterAttackAuthorized &&
+                                 (Provider.Frame?.ObservedActiveBuffs.Any(b => SubstitutionBuffs.IsPunishEligible(b.Name)) == true || _subReadBurst)) ||
                             (_autoEnabled && Config.Live.TurnActivationKeys.Any(k => LiveInputController.IsDown(LiveKeySettings.Keys[k])))));
                         if (!urgent || Provider.Frame is null)
                             await Task.Delay(5, _stop.Token).ConfigureAwait(false);
@@ -343,6 +351,9 @@ public sealed class LiveContext : IDisposable
             return new(false, $"{kind}: sinal ainda não validado para esta build");
         if (kind == LiveInputKind.Punish && !PunishComboApproved)
             return new(false, "Combo SubPunish bloqueado neste perfil de giro experimental");
+        if (kind == LiveInputKind.Punish && Punish?.State == EarlyPunishState.Executing &&
+            (Punish.TriggerSources.Count == 0 || Punish.TriggerSources.Any(source => !SubstitutionBuffs.IsPunishEligible(source))))
+            return new(false, "SubPunish exige remoção de Sub Tai ou Água; Sub normal não dispara combo");
         if (kind == LiveInputKind.Attack && !Provider.Profile.ApprovesAttackMode(Config.CombatAssist.AttackMode.ToString()))
             return new(false, $"Attack: modo {Config.CombatAssist.AttackMode} não aprovado para esta build");
         if (kind == LiveInputKind.Attack && Config.CombatAssist.AttackMode == AutoAttackMode.Fan &&
@@ -362,7 +373,10 @@ public sealed class LiveContext : IDisposable
         var foreground = Provider is not null && LiveInputController.IsGameForeground(Provider.ProcessId);
         var emergency = LiveInputController.EmergencyPending();
         var text = LiveInputController.TextEntryFocused();
-        if (kind == LiveInputKind.Punish && Provider?.Profile.PunishComboRequiresTarget == true &&
+        // Observe Tai/Water even before target selection; the adapter still requires a stable
+        // selected player before EACH offensive key, including the first one.
+        if (kind == LiveInputKind.Punish && Punish?.State == EarlyPunishState.Executing &&
+            Provider?.Profile.PunishComboRequiresTarget == true &&
             frame?.Snapshot.Target is not { IsAlive: true, IsTargeted: true })
             return new(false, "Combo exige jogador selecionado e vivo nesta build");
         if (kind == LiveInputKind.CastTurning)
@@ -613,11 +627,25 @@ public sealed class LiveContext : IDisposable
         Punish?.Update(frame, _subEnabled, CounterAttackAuthorized, punishSafety.Allowed, punishSafety.Reason);
         if (Punish?.State is EarlyPunishState.Idle or EarlyPunishState.WatchingBuff or EarlyPunishState.Expired or EarlyPunishState.Cancelled)
             _comboFacing?.Reset();
-        _subReadBurst = punishSafety.Allowed && (frame?.SubstitutionActive == true ||
+        _subReadBurst = punishSafety.Allowed && (frame?.ObservedActiveBuffs.Any(b => SubstitutionBuffs.IsPunishEligible(b.Name)) == true ||
             Punish?.State is EarlyPunishState.WatchingBuff or EarlyPunishState.RemovalPending or EarlyPunishState.Executing);
         var castGate = CheckSafety(LiveInputKind.CastTurning);
         CastTurn?.Update(frame, castGate.Allowed, SubNeedsPriority);
         CastTurnStatus = castGate.Allowed ? CastTurn?.Status ?? "Indisponível" : castGate.Reason;
+        if (_castTurnEnabled && frame?.Cast?.Active == true)
+        {
+            // One log per phase/spell, not per changing millisecond; makes missed windows diagnosable.
+            var phase = CastTurnStatus.StartsWith("Auto Cast Turn: cast ", StringComparison.Ordinal)
+                ? $"cast {frame.Cast.SpellId} em progresso" : CastTurnStatus;
+            if (_lastCastTurnDiagnostic != phase)
+            {
+                _lastCastTurnDiagnostic = phase;
+                Log.Log(LogLevel.Info, $"Cast Turn diagnóstico: {phase}; ID={frame.Cast.SpellId}; " +
+                    $"restante={frame.Cast.RemainingMs}ms; leitura={frame.ReadDurationMs}ms; " +
+                    $"alvo={frame.TargetName ?? "nenhum"}", EventOrigin.Observed);
+            }
+        }
+        else _lastCastTurnDiagnostic = null;
         UpdateFollow();
         var canRunTurn = CastTurn?.InFinalWindow != true && Punish?.BlocksAutoTurning != true;
         if (turnSafety.Allowed && frame is not null && frame.CapturedAtMs != _lastTurnCapture && canRunTurn)

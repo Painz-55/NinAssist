@@ -8,6 +8,16 @@ using NinOnlineAutoAssist.Core.Abstractions;
 
 // Measures scheduling only. No game attachment and no keyboard input is sent.
 if (args.Length == 1 && args[0] == "--response-timing") return ResponseTimingProbe.Run();
+if (args.Length == 4 && args[0] == "--camera-candidates" && int.TryParse(args[1], out var cameraPid))
+    return CameraCandidateProbe.Run(cameraPid, args[2], args[3]);
+if (args.Length == 4 && args[0] == "--view-candidates" && int.TryParse(args[1], out var viewPid))
+    return ViewCandidateProbe.Run(viewPid, args[2], args[3]);
+if (args.Length == 5 && args[0] == "--passive-player-track" && int.TryParse(args[1], out var playerTrackPid) &&
+    int.TryParse(args[4], out var playerTrackSeconds))
+    return PassivePlayerTrack.Run(playerTrackPid, args[2], args[3], playerTrackSeconds);
+if (args.Length == 7 && args[0] == "--actor-coordinate-survey" && int.TryParse(args[1], out var actorPid) &&
+    int.TryParse(args[4], out var actorSlot) && int.TryParse(args[6], out var actorSeconds))
+    return ActorCoordinateSurvey.Run(actorPid, args[2], args[3], actorSlot, args[5], actorSeconds);
 if (args.Length == 2 && args[0] == "--replay-cast-turn") return CastTraceReplay.Run(args[1]);
 if (args.Length == 4 && args[0] == "--cast-state-trace" && int.TryParse(args[1], out var castPid) && int.TryParse(args[3], out var castSeconds))
     return CastStateTrace.Run(castPid, args[2], castSeconds);
@@ -53,7 +63,9 @@ if (args.Length == 4 && args[0] == "--calibration-snapshot" && int.TryParse(args
     for (var i = 0; i < 12; i++) { provider.GetSnapshot(); Thread.Sleep(100); }
     Console.WriteLine(JsonSerializer.Serialize(new { provider.Status, provider.Frame, provider.NavigationStatus,
         Navigation = provider.Navigation is { } n ? new { n.Map, n.Width, n.Height, n.DynamicHazardsKnown } : null,
-        provider.MapPlayersStatus, MapPlayers = provider.MapPlayers?.Players.Count }));
+        provider.MapPlayersStatus, MapPlayers = provider.MapPlayers?.Players.Count,
+         Grid = provider.MapPlayers is { } mapPlayers ? new { mapPlayers.GridWidth, mapPlayers.GridHeight, mapPlayers.RenderView } : null,
+         provider.RenderViewStatus }));
     return provider.Frame is null ? 1 : 0;
 }
 if (args.Length == 5 && args[0] == "--calibration-watch" && int.TryParse(args[1], out var watchCalibrationPid) &&
@@ -76,7 +88,9 @@ if (args.Length == 4 && args[0] == "--signed-profile-snapshot" && int.TryParse(a
     for (var i = 0; i < 6; i++) { provider.GetSnapshot(); Thread.Sleep(100); }
     Console.WriteLine(JsonSerializer.Serialize(new { provider.Status, provider.Frame, provider.NavigationStatus,
         Navigation = provider.Navigation is null ? null : new { provider.Navigation.Map, provider.Navigation.Width, provider.Navigation.Height },
-        provider.MapPlayersStatus, MapPlayers = provider.MapPlayers?.Players.Count }));
+        provider.MapPlayersStatus, MapPlayers = provider.MapPlayers?.Players.Count,
+        Grid = provider.MapPlayers is { } signedMap ? new { signedMap.GridWidth, signedMap.GridHeight, signedMap.RenderView } : null,
+        provider.RenderViewStatus }));
     return provider.Frame is null ? 1 : 0;
 }
 if (args.Length == 2 && args[0] == "--field-metadata") return FieldMetadata.Run(args[1]);

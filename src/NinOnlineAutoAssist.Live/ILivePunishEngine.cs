@@ -8,6 +8,7 @@ public interface ILivePunishEngine
     bool HasTimeForTurn { get; }
     bool BlocksAutoTurning { get; }
     long? NextKeyDueAtMs { get; }
+    IReadOnlyList<string> TriggerSources { get; }
     bool TriggerBuffsRemainAbsent(LiveFrame frame);
     bool HasUnprocessedRemoval(LiveFrame? frame);
     void Reset();

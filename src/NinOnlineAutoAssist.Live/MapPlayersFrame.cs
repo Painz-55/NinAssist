@@ -7,9 +7,16 @@ public sealed record MapPlayer(int Slot, string Name, int Map, double? X, double
 
 public sealed record NumberedMapPlayer(int Number, MapPlayer Player);
 
+/// <summary>Read-only game render view in world pixels; not inferred from the local sprite or map edges.</summary>
+public sealed record RenderViewObservation(double CenterX, double CenterY, double SizeX, double SizeY);
+
 /// <summary>Client-side map records, not a server-wide or visibility-authoritative census.</summary>
 public sealed record MapPlayersFrame(int Map, string LocalId, long CapturedAtMs, IReadOnlyList<MapPlayer> Players, int UnreadableSlots)
 {
+    // Optional verified map grid dimensions for the visual-only camera-clamp projection.
+    public int? GridWidth { get; init; }
+    public int? GridHeight { get; init; }
+    public RenderViewObservation? RenderView { get; init; }
     public PlayerVillage LocalVillage
     {
         get

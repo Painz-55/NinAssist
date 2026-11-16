@@ -32,7 +32,7 @@ public sealed class ObservedCastIdsTests
         ids.Observe(Frame(0), 0);
         ids.Observe(Frame(50) with { Cast = null }, 50);
         ids.Observe(Frame(100), 100);
-        ids.Observe(Frame(150), 400);
+        ids.Observe(Frame(150), 501);
         Assert.Empty(ids.Recent);
         ids.Observe(Frame(450), 450);
         ids.Observe(Frame(700), 700); // More than 200ms between samples.

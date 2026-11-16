@@ -62,6 +62,10 @@ public sealed class Form1 : Form
     private Label _playersStatus = null!;
     private MapPlayersFrame? _shownPlayers;
     private MapPlayersPlot _playersPlot = null!;
+    private Button _overlayButton = null!;
+    private PlayerPositionOverlay? _overlay;
+    private readonly LastKnownPlayerTracker _lastKnownPlayers = new();
+    private bool _overlayEnabled;
     private int? _selectedMapSlot;
     private bool _refreshingPlayers;
     private CheckBox _hideOwnVillage = null!;
@@ -94,6 +98,8 @@ public sealed class Form1 : Form
         Shown += (_, _) => ConnectToGame();
         FormClosed += (_, _) =>
         {
+            StopOverlay();
+            _overlay?.Dispose();
             _session.Revoke();
             _timer.Stop(); _timer.Dispose();
             if (_ctx is not null) { _ctx.MemoryLog.EntryLogged -= OnLogEntry; _ctx.Dispose(); }
@@ -143,7 +149,7 @@ public sealed class Form1 : Form
         var castMenu = new ContextMenuStrip();
         castMenu.Items.Add("Excluir jutsus do Cast Turn…", null, (_, _) => ConfigureCastTurn());
         _btnCastTurn.ContextMenuStrip = castMenu;
-        _btnSubPunish = MakeModuleButton("SUBPUNISH LEGADO", false);
+        _btnSubPunish = MakeModuleButton("SUBPUNISH TAI/ÁGUA", false);
         _btnSubPunish.Click += (_, _) => ToggleSubPunish();
         _btnCombat = MakeModuleButton("AA + TOOL", false);
         _btnCombat.Click += (_, _) =>
@@ -279,6 +285,20 @@ public sealed class Form1 : Form
         _hideOwnVillage.CheckedChanged += (_, _) => RefreshPlayers();
         var filters = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 34, WrapContents = false, AutoScroll = true };
         filters.Controls.Add(_hideOwnVillage);
+        _overlayButton = new Button { Text = "OVERLAY OFF", AutoSize = true,
+            ForeColor = Fg, BackColor = PanelAlt };
+        _overlayButton.Click += (_, _) =>
+        {
+            if (_overlayEnabled) StopOverlay();
+            else if (_ctx?.Provider is not null && Allowed(AppFeature.MapPlayers))
+            {
+                _overlayEnabled = true;
+                _ctx.SetOverlayEnabled(true);
+                _overlayButton.Text = "OVERLAY ON · clique para desligar";
+                AppendLog(LogLevel.Info, "Overlay ON: última posição conhecida de registros no mapa, projetada pela view observada; não revela trajeto invisível. F12 desliga.", EventOrigin.Requested);
+            }
+        };
+        filters.Controls.Add(_overlayButton);
         foreach (var village in new[] { PlayerVillage.Leaf, PlayerVillage.Sand, PlayerVillage.Mist, PlayerVillage.Renegade })
         {
             var box = new CheckBox { Text = $"Ocultar {PlayerVillages.Label(village)}", AutoSize = true,
@@ -433,7 +453,7 @@ public sealed class Form1 : Form
         _txtCharacter.Text = _autoCharacter.Checked ? "" : _config.Live.CharacterName;
         _allowSequence.Text = $"AUTORIZAR {string.Join(" → ", _config.Live.PunishKeys)} + GIRO ANTES DO COMBO";
         _allowSequence.Checked = false; // Offensive permission is explicit for each app session.
-        AppendLog(LogLevel.Info, "AO VIVO: módulos OFF. Sub não gira durante buff; prepara direção antes de cada tecla do combo. Turn comum exige tecla. Remoção antecipada é HEURÍSTICA.", null);
+        AppendLog(LogLevel.Info, "AO VIVO: módulos OFF. SubPunish somente Tai/Água; Sub normal cria decoy e não dispara combo. Remoção antecipada é HEURÍSTICA.", null);
         RefreshModuleButtons();
         RefreshModeBadge();
         RefreshStatus();
@@ -466,6 +486,7 @@ public sealed class Form1 : Form
 
     private void DisconnectFromGame()
     {
+        StopOverlay();
         _observedCastIds.Reset();
         if (_ctx is not null)
         {
@@ -566,7 +587,7 @@ public sealed class Form1 : Form
     {
         RefreshModuleButton(_btnAutoTurning, "AUTO TURNING");
         RefreshModuleButton(_btnCastTurn, "AUTO CAST TURN");
-        RefreshModuleButton(_btnSubPunish, "SUBPUNISH LEGADO");
+        RefreshModuleButton(_btnSubPunish, "SUBPUNISH TAI/ÁGUA");
         var profile = _ctx?.Provider?.Profile;
         var attackApproved = Allowed(AppFeature.AutoAttack) && profile is { ActuationValidated: true } &&
             profile.ApprovesAttackMode(_config.CombatAssist.AttackMode.ToString());
@@ -588,6 +609,7 @@ public sealed class Form1 : Form
 
     private void EmergencyStop()
     {
+        StopOverlay();
         _ctx?.SetAutoTurningEnabled(false);
         _ctx?.SetSubPunishEnabled(false);
         _ctx?.SetCombatEnabled(false); _ctx?.SetCombatAuthorized(false); _ctx?.SetFollowEnabled(false);
@@ -673,6 +695,39 @@ public sealed class Form1 : Form
         }
         RefreshModeBadge();
         RefreshStatus();
+        RefreshOverlay();
+    }
+
+    private void StopOverlay()
+    {
+        _overlayEnabled = false;
+        _lastKnownPlayers.Reset();
+        _ctx?.SetOverlayEnabled(false);
+        _overlay?.Hide();
+        if (_overlayButton is not null) _overlayButton.Text = "OVERLAY OFF";
+    }
+
+    private void RefreshOverlay()
+    {
+        if (!_overlayEnabled || !Allowed(AppFeature.MapPlayers) || _ctx?.Provider is not { } provider ||
+            _ctx.Frame is not { } frame || _ctx.MapPlayers is not { } list ||
+            !LiveInputController.IsGameForeground(provider.ProcessId) ||
+            PlayerPositionOverlay.GameClientBounds(provider.ProcessId) is not { } bounds)
+        { _overlay?.Hide(); return; }
+        var now = _ctx.ObservationNowMs;
+        // The full client map is considered; only points actually inside the render view are drawn.
+        var candidates = _lastKnownPlayers.Update(list, frame, now);
+        var projected = candidates.Select(p => (Marker: p,
+                Point: OverlayProjection.Project(p, frame, list, bounds.Width, bounds.Height)))
+            .Where(p => p.Point.HasValue)
+            .Select(p => (p.Marker, new PointF((float)p.Point!.Value.X, (float)p.Point!.Value.Y))).ToArray();
+        if (projected.Length == 0)
+        {
+            _overlay?.Hide();
+            return;
+        }
+        _overlay ??= new PlayerPositionOverlay();
+        _overlay.UpdateDots(bounds, projected);
     }
 
     // ═══════════════════════════════ status & log ═══════════════════════════════
@@ -706,7 +761,7 @@ public sealed class Form1 : Form
         }
         else _lblFlowStatus.Text = "Desconectado";
         var sequence = string.Join(" → ", _config.Live.PunishKeys);
-        _lblCooldown.Text = _ctx?.CounterAttackAuthorized == true ? $"{sequence} + GIRO SUB autorizados; combo sem alvo"
+        _lblCooldown.Text = _ctx?.CounterAttackAuthorized == true ? $"{sequence} + GIRO SUB autorizados; somente Tai/Água; alvo conforme perfil"
             : $"DESAUTORIZADO — {sequence}";
         _lblCooldown.ForeColor = _ctx?.CounterAttackAuthorized == true ? Good : Warn;
         var entries = _ctx?.MemoryLog.Snapshot();

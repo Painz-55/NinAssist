@@ -42,6 +42,7 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
     public MapPlayersFrame? MapPlayers { get; private set; }
     public string MapPlayersStatus { get; private set; } = "Lista não solicitada";
     public string NavigationStatus { get; private set; } = "Navegação não solicitada";
+    public string RenderViewStatus { get; private set; } = "View não solicitada";
     public string Status { get; private set; } = "Connecting";
     public bool IsLiveData => Frame is { } f && _clock.NowMs - f.CapturedAtMs <= 500;
 
@@ -259,7 +260,21 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
                     if (arrayField.ReadObject(domain).Address != arrayObject.Address ||
                         StaticInt(globals, Profile.LocalIndex, domain) != local || Field<int>(player, Profile.Map) != map)
                         throw new InvalidOperationException("Mapa/lista mudou durante leitura");
-                    MapPlayers = new(map, $"{local}:{name}", started, MapPlayersFrame.Filter(players, map), unreadable);
+                    int? gridWidth = null, gridHeight = null;
+                    try
+                    {
+                        var mapObject = roots.GetStaticFieldByName(Profile.MapRoot)?.ReadObject(domain);
+                        if (mapObject is { IsNull: false } currentMap && ReadMapIdentity(roots, domain, currentMap) == map)
+                        {
+                            var tiles = currentMap.ReadObjectField(Profile.Tiles);
+                            if (tiles.IsArray && tiles.Type?.Name == "Common.TileRec[,]" && tiles.AsArray().Rank == 2 &&
+                                tiles.AsArray().GetLength(0) is > 0 and <= 512 && tiles.AsArray().GetLength(1) is > 0 and <= 512)
+                            { gridWidth = tiles.AsArray().GetLength(0); gridHeight = tiles.AsArray().GetLength(1); }
+                        }
+                    }
+                    catch { /* List remains available; overlay projection fails closed without grid dimensions. */ }
+                    MapPlayers = new(map, $"{local}:{name}", started, MapPlayersFrame.Filter(players, map), unreadable)
+                    { GridWidth = gridWidth, GridHeight = gridHeight, RenderView = ReadRenderView(player, map, x, y) };
                     MapPlayersStatus = $"{MapPlayers.Players.Count} registros locais no mapa {map}";
                 }
                 catch (Exception ex) { MapPlayers = null; MapPlayersStatus = $"Lista indisponível: {ex.Message}"; }
@@ -331,6 +346,49 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
 
     private int ReadMapIdentity(ClrType roots, ClrAppDomain domain, ClrObject mapObject) => Profile.MapIdentityInRoots
         ? StaticInt(roots, Profile.MapIdentity, domain) : Field<int>(mapObject, Profile.MapIdentity);
+
+    private RenderViewObservation? ReadRenderView(ClrObject local, int map, double x, double y)
+    {
+        // Exact-build observations only. Unknown builds never guess a camera or fall back to player center.
+        var viewMapping = Profile.Sha256 switch
+        {
+            "3B1AAF914AE0EA2268CEE6C6E95960C2A04CDAC383E0C540D98752B12EF96842"
+                => (Owner: "wMWLcvW2ArKRj9nhY3bg.TyDWRPW2l05BDoekEyUt", Field: "xgcWweIHSdJ"),
+            "C3F7DF26A0C00D72291DEFC67F219BD54909AE9062160329DE4AD6956110CB72"
+                => (Owner: "bfh79MUAUg04A0AkOIDe.XueWakUAoTIroqRVa3KM", Field: "AwCUSQuJJUb"),
+            _ => (Owner: "", Field: "")
+        };
+        if (viewMapping.Owner.Length == 0) { RenderViewStatus = "Hash sem view calibrada"; return null; }
+        try
+        {
+            var module = _runtime.EnumerateModules().Single(m => Path.GetFileName(m.Name) == "NinOnline.dll");
+            var owner = module.GetTypeByName(viewMapping.Owner);
+            var field = owner?.GetStaticFieldByName(viewMapping.Field);
+            var domain = _runtime.AppDomains.Single();
+            if (field?.Type?.Name != "NinEngine.Graphics.View" || field.IsInitialized(domain) != true)
+            { RenderViewStatus = "View global não inicializada"; return null; }
+            var view = field.ReadObject(domain);
+            if (view.IsNull || view.Type?.Name != "NinEngine.Graphics.View")
+            { RenderViewStatus = "View ausente"; return null; }
+            var center = view.ReadValueTypeField("myCenter");
+            var size = view.ReadValueTypeField("mySize");
+            var viewport = view.ReadValueTypeField("myViewport");
+            var cx = center.ReadField<float>("X"); var cy = center.ReadField<float>("Y");
+            var sx = size.ReadField<float>("X"); var sy = size.ReadField<float>("Y");
+            if (!float.IsFinite(cx) || !float.IsFinite(cy) || sx is < 320 or > 8000 || sy is < 240 or > 8000 ||
+                view.ReadField<float>("myRotation") != 0 ||
+                viewport.ReadField<float>("Left") != 0 || viewport.ReadField<float>("Top") != 0 ||
+                viewport.ReadField<float>("Width") != 1 || viewport.ReadField<float>("Height") != 1 ||
+                Math.Abs(x * LiveMemoryProfile.PixelsPerTile - cx) > sx / 2 + 32 ||
+                Math.Abs(y * LiveMemoryProfile.PixelsPerTile - cy) > sy / 2 + 32 ||
+                local.ReadStringField(Profile.Name, 64) != _identity.Name || Field<int>(local, Profile.Map) != map ||
+                field.ReadObject(domain).Address != view.Address)
+            { RenderViewStatus = "View inconsistente com mapa/personagem"; return null; }
+            RenderViewStatus = "View observada";
+            return new(cx, cy, sx, sy);
+        }
+        catch (Exception ex) { RenderViewStatus = $"View indisponível: {ex.Message}"; return null; }
+    }
 
     private NavigationFrame ReadTerrain(ClrType roots, ClrAppDomain domain, int localIndex, int map, double x, double y, long captured)
     {

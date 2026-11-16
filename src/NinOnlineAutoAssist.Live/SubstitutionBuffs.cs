@@ -8,6 +8,9 @@ public static class SubstitutionBuffs
     // Observed on Skyrend together with normal Sub, with its own 5→0 countdown.
     public const string Tai = "Speed Mirage Technique";
     public static bool IsKnown(string name) => name is Normal or Water or Tai;
+    // The normal Sub now leaves a decoy/invisibility rather than moving next to an attacker.
+    // Keep it observable for UI, but never use it as evidence for the live counterattack.
+    public static bool IsPunishEligible(string name) => name is Water or Tai;
     public static string Label(string name) => name switch { Normal => "Normal", Water => "Água", Tai => "Tai", _ => name };
 
     public static IReadOnlyList<ObservedBuff> Active(LiveFrame frame)
@@ -36,9 +39,11 @@ internal sealed class SubstitutionRemovalTracker
     private readonly Dictionary<string, Cycle> _cycles = new(StringComparer.Ordinal);
     public void Reset() => _cycles.Clear();
 
-    public RemovalSample Update(LiveFrame frame, long nowMs, long marginMs, int samplesRequired)
+    public RemovalSample Update(LiveFrame frame, long nowMs, long marginMs, int samplesRequired,
+        Func<string, bool>? eligible = null)
     {
-        var active = SubstitutionBuffs.Active(frame).GroupBy(b => b.Name).ToDictionary(g => g.Key, g =>
+        var active = SubstitutionBuffs.Active(frame).Where(b => eligible?.Invoke(b.Name) ?? true)
+            .GroupBy(b => b.Name).ToDictionary(g => g.Key, g =>
             new ObservedBuff(g.Key, g.Any(b => b.RemainingSeconds is null) ? null : g.Min(b => b.RemainingSeconds)));
         foreach (var name in active.Keys) _cycles.TryAdd(name, new Cycle());
         var ready = new List<EarlyRemoval>();

@@ -56,8 +56,11 @@ public sealed class AutoCastTurnEngine
         Status = "Auto Cast Turn: aguardando novo cast completo";
     }
 
+    // The observed 2026-11-16 reader cadence is ~220–280 ms when map census runs. A 200 ms
+    // hard cutoff disarmed every short cast. Remaining() still checks the estimated live
+    // deadline and CheckDispatch rechecks target/cast before every key; never turn after expiry.
     public static bool Fresh(LiveFrame? frame, long now) => frame is not null && now >= frame.CapturedAtMs &&
-        now - frame.CapturedAtMs <= 200 && frame.ReadDurationMs is >= 0 and <= 200;
+        now - frame.CapturedAtMs <= 350 && frame.ReadDurationMs is >= 0 and <= 350;
 
     private long Window(CastObservation cast) => Math.Min(_settings.LeadTimeMs, cast.TotalMs / 4);
     private static bool TimingValid(LiveFrame frame, CastObservation cast, long now) =>
@@ -108,7 +111,7 @@ public sealed class AutoCastTurnEngine
         {
             Reset(); _contextPlayer = frame.Snapshot.Player.Id; _contextMap = frame.Map; _lastStarted = 0;
         }
-        if (_lastCapture >= 0 && (frame.CapturedAtMs < _lastCapture || frame.CapturedAtMs - _lastCapture > 200))
+        if (_lastCapture >= 0 && (frame.CapturedAtMs < _lastCapture || frame.CapturedAtMs - _lastCapture > 400))
         { Reset(); Status = "Auto Cast Turn: lacuna de leitura; aguardando novo cast"; }
         var freshSample = frame.CapturedAtMs > _lastCapture;
         _lastCapture = frame.CapturedAtMs;

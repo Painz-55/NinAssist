@@ -92,7 +92,7 @@ public sealed class AutoCastTurnTests
         if (problem == "target-switch") sample = Frame(200, Active(150), target: "other-target");
         if (problem == "rollback") sample = Frame(200, Active(350));
         if (problem == "expired-window") sample = Frame(200, Active(0));
-        if (problem == "gap") { clock.Advance(150); sample = sample with { CapturedAtMs = 350 }; }
+        if (problem == "gap") { clock.Advance(350); sample = sample with { CapturedAtMs = 550 }; }
         engine.Update(sample, problem != "revocation", problem == "priority");
         clock.Advance(50);
         var final = Frame(clock.NowMs, Active(50));
@@ -159,6 +159,26 @@ public sealed class AutoCastTurnTests
     }
 
     [Fact]
+    public void ObservedSlowReaderCadenceStillTracksShortCastWithoutLateInput()
+    {
+        var clock = new SimulatedClock(0); var sent = 0;
+        var engine = new AutoCastTurnEngine(clock, TestSettings(200), _ => { sent++; return TurnResult.Ok(); });
+        engine.Update(Frame(0, Idle) with { ReadDurationMs = 220 }, true, false);
+        foreach (var (at, remaining) in new[] { (260L, 780L), (520L, 520L), (780L, 260L), (940L, 100L) })
+        {
+            clock.Advance(at - clock.NowMs);
+            engine.Update(Frame(at, Active(remaining, total: 780)) with { ReadDurationMs = 220 }, true, false);
+        }
+        Assert.Equal(1, sent);
+        clock.Advance(160);
+        engine.Update(Frame(1100, Active(0, total: 780)) with { ReadDurationMs = 220 }, true, false);
+        Assert.Equal(1, sent);
+        Assert.False(engine.CanDispatch(Frame(1100, Active(0, total: 780)), clock.NowMs));
+        Assert.False(AutoCastTurnEngine.Fresh(Frame(0, Idle) with { ReadDurationMs = 351 }, 0));
+        Assert.False(AutoCastTurnEngine.Fresh(Frame(0, Idle), 351));
+    }
+
+    [Fact]
     public void ShortAndInvalidCastsAreNotTurnedAtTheirBeginning()
     {
         Assert.False(Active(0, total: 0).Valid);
@@ -207,7 +227,7 @@ public sealed class AutoCastTurnTests
         var frame = Frame(0, Idle);
         if (fault == "no-target") frame = frame with { Snapshot = frame.Snapshot with { Target = null } };
         if (fault == "unknown") frame = frame with { Cast = null };
-        Assert.False(LiveSafetyGate.CheckCastTurning(frame, fault == "stale" ? 201 : 0,
+        Assert.False(LiveSafetyGate.CheckCastTurning(frame, fault == "stale" ? 351 : 0,
             fault != "off", fault != "foreground", fault == "emergency", fault == "chat").Allowed);
         Assert.True(LiveSafetyGate.CheckCastTurning(Frame(0, Idle), 0, true, true, false, false).Allowed);
     }

@@ -3,7 +3,7 @@ namespace NinOnlineAutoAssist.Core.Config;
 public sealed record AutoCastTurnSettings
 {
     // Small pre-completion window to give the ordinary turn key time to reach the game's input poll.
-    public int LeadTimeMs { get; init; } = 100;
+    public int LeadTimeMs { get; init; } = 200;
     // Default: all valid observed casts. Only explicitly listed spell IDs are skipped.
     public int[] ExcludedSpellIds { get; init; } = [];
     public bool Allows(int spellId) => spellId > 0 && ExcludedSpellIds is not null && !ExcludedSpellIds.Contains(spellId);

@@ -15,5 +15,5 @@
     "EmergencyStopKey": "F12",
     "LogFile": "logs/autoassist.log"
   },
-  "AutoCastTurn": { "LeadTimeMs": 100 }
+  "AutoCastTurn": { "LeadTimeMs": 200 }
 }
