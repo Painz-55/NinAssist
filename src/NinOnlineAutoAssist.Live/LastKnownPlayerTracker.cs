@@ -3,7 +3,8 @@ namespace NinOnlineAutoAssist.Live;
 /// <summary>Presentation-only last-known locations. Never classifies a client record as a live invisible player.</summary>
 public sealed class LastKnownPlayerTracker
 {
-    private sealed record Entry(string Name, double X, double Y, bool Selected, long SeenAtMs, long MovedAtMs);
+    private sealed record Entry(string Name, double X, double Y, PlayerVillage Village,
+        bool Selected, long SeenAtMs, long MovedAtMs);
     private readonly Dictionary<int, Entry> _entries = new();
     private int _map;
     private string? _localId;
@@ -12,7 +13,8 @@ public sealed class LastKnownPlayerTracker
 
     public void Reset() { _entries.Clear(); _map = 0; _localId = null; _lastCapture = -1; }
 
-    public IReadOnlyList<NearbyPlayerMarkers.Marker> Update(MapPlayersFrame? list, LiveFrame? frame, long nowMs)
+    public IReadOnlyList<NearbyPlayerMarkers.Marker> Update(MapPlayersFrame? list, LiveFrame? frame, long nowMs,
+        bool hideOwnVillage = false, IReadOnlyCollection<PlayerVillage>? hiddenVillages = null)
     {
         if (frame is null || (_localId is not null &&
             (_localId != frame.Snapshot.Player.Id || _map != frame.Map)))
@@ -34,7 +36,8 @@ public sealed class LastKnownPlayerTracker
                 var same = old?.Name == player.Name;
                 var moved = same && Math.Abs(old!.X - x) < 0.05 && Math.Abs(old.Y - y) < 0.05
                     ? old.MovedAtMs : list.CapturedAtMs;
-                _entries[player.Slot] = new(player.Name, x, y, player.IsSelected, list.CapturedAtMs, moved);
+                _entries[player.Slot] = new(player.Name, x, y, player.Village,
+                    player.IsSelected, list.CapturedAtMs, moved);
             }
         }
         foreach (var (slot, entry) in _entries.ToArray())
@@ -43,7 +46,10 @@ public sealed class LastKnownPlayerTracker
         var xLocal = frame.Snapshot.Player.PositionX;
         var yLocal = frame.Snapshot.Player.PositionY;
         if (!double.IsFinite(xLocal) || !double.IsFinite(yLocal)) { Reset(); return []; }
-        return Array.AsReadOnly(_entries.Select(e => new NearbyPlayerMarkers.Marker(e.Key, e.Value.Name,
+        var hidden = hiddenVillages ?? Array.Empty<PlayerVillage>();
+        return Array.AsReadOnly(_entries.Where(e => MapPlayersFrame.VillageVisible(e.Value.Village,
+                isLocal: false, list.LocalVillage, hideOwnVillage, hidden))
+            .Select(e => new NearbyPlayerMarkers.Marker(e.Key, e.Value.Name,
                 e.Value.X - xLocal, e.Value.Y - yLocal, e.Value.Selected,
                 nowMs - e.Value.SeenAtMs, nowMs - e.Value.MovedAtMs,
                 e.Value.SeenAtMs == list.CapturedAtMs))

@@ -41,11 +41,16 @@ public sealed record MapPlayersFrame(int Map, string LocalId, long CapturedAtMs,
         ArgumentNullException.ThrowIfNull(hiddenVillages);
         if (!hideOwnVillage && hiddenVillages.Count == 0) return Players;
         var own = LocalVillage;
-        return Array.AsReadOnly(Players.Where(p =>
-            (!hideOwnVillage || PlayerVillages.IsKnown(own) && !p.IsLocal &&
-                PlayerVillages.IsKnown(p.Village) && p.Village != own) &&
-            !(PlayerVillages.IsKnown(p.Village) && hiddenVillages.Contains(p.Village))).ToArray());
+        return Array.AsReadOnly(Players.Where(p => VillageVisible(p.Village, p.IsLocal, own,
+            hideOwnVillage, hiddenVillages)).ToArray());
     }
+
+    /// <summary>Shared presentation-only filter for the map list and last-known overlay.</summary>
+    public static bool VillageVisible(PlayerVillage village, bool isLocal, PlayerVillage own,
+        bool hideOwnVillage, IReadOnlyCollection<PlayerVillage> hiddenVillages) =>
+        (!hideOwnVillage || PlayerVillages.IsKnown(own) && !isLocal &&
+            PlayerVillages.IsKnown(village) && village != own) &&
+        !(PlayerVillages.IsKnown(village) && hiddenVillages.Contains(village));
 
     /// <summary>Display numbers are recalculated after filtering; Slot remains the game's stable identifier.</summary>
     public IReadOnlyList<NumberedMapPlayer> NumberedForDisplay(bool hideOwnVillage, IReadOnlyCollection<PlayerVillage> hiddenVillages) =>

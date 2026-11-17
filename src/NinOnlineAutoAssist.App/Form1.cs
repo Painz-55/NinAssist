@@ -280,9 +280,9 @@ public sealed class Form1 : Form
         for (var i = 0; i < columnWidths.Length; i++) _playersGrid.Columns[i].Width = columnWidths[i];
         _playersStatus = new Label { Dock = DockStyle.Top, Height = 44, ForeColor = Warn,
             Text = "Aguardando lista local do mapa.\nVilas: Mist azul · Sand amarelo · Leaf verde · Renegado vermelho · Desconhecida neutro." };
-        _hideOwnVillage = new CheckBox { Text = "Ocultar minha vila", AutoSize = true,
-            ForeColor = Fg, Checked = false };
-        _hideOwnVillage.CheckedChanged += (_, _) => RefreshPlayers();
+        _hideOwnVillage = new CheckBox { Text = "Ocultar minha vila (mapa + overlay)", AutoSize = true,
+             ForeColor = Fg, Checked = false };
+        _hideOwnVillage.CheckedChanged += (_, _) => { RefreshPlayers(); RefreshOverlay(); };
         var filters = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 34, WrapContents = false, AutoScroll = true };
         filters.Controls.Add(_hideOwnVillage);
         _overlayButton = new Button { Text = "OVERLAY OFF", AutoSize = true,
@@ -303,7 +303,7 @@ public sealed class Form1 : Form
         {
             var box = new CheckBox { Text = $"Ocultar {PlayerVillages.Label(village)}", AutoSize = true,
                 ForeColor = Fg, Margin = new Padding(12, 3, 0, 3) };
-            box.CheckedChanged += (_, _) => RefreshPlayers();
+            box.CheckedChanged += (_, _) => { RefreshPlayers(); RefreshOverlay(); };
             _villageFilters.Add(village, box);
             filters.Controls.Add(box);
         }
@@ -716,7 +716,10 @@ public sealed class Form1 : Form
         { _overlay?.Hide(); return; }
         var now = _ctx.ObservationNowMs;
         // The full client map is considered; only points actually inside the render view are drawn.
-        var candidates = _lastKnownPlayers.Update(list, frame, now);
+        var ownVillage = list.LocalVillage;
+        var hiddenVillages = _villageFilters.Where(entry => entry.Key != ownVillage && entry.Value.Checked)
+            .Select(entry => entry.Key).ToArray();
+        var candidates = _lastKnownPlayers.Update(list, frame, now, _hideOwnVillage.Checked, hiddenVillages);
         var projected = candidates.Select(p => (Marker: p,
                 Point: OverlayProjection.Project(p, frame, list, bounds.Width, bounds.Height)))
             .Where(p => p.Point.HasValue)

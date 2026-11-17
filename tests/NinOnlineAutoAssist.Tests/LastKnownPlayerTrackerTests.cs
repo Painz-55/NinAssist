@@ -58,4 +58,39 @@ public sealed class LastKnownPlayerTrackerTests
         Assert.False(last.CurrentlyReported);
         Assert.Equal(200, last.ObservationAgeMs);
     }
+
+    [Fact]
+    public void MapVillageFiltersApplyToFreshAndLastKnownOverlayMarkers()
+    {
+        var tracker = new LastKnownPlayerTracker();
+        var local = new MapPlayer(7, "local", 190, 50, 50, true, false) { Village = PlayerVillage.Leaf };
+        var ally = new MapPlayer(34, "ally", 190, 52, 53, false, false) { Village = PlayerVillage.Leaf };
+        var enemy = new MapPlayer(35, "enemy", 190, 53, 53, false, false) { Village = PlayerVillage.Sand };
+        var unknown = new MapPlayer(36, "unknown", 190, 54, 53, false, false);
+        tracker.Update(List(100, local, ally, enemy, unknown), Frame(100), 100);
+
+        var onlyEnemy = Assert.Single(tracker.Update(List(200, local), Frame(200), 200,
+            hideOwnVillage: true, hiddenVillages: [PlayerVillage.Mist]));
+        Assert.Equal("enemy", onlyEnemy.Name);
+        Assert.False(onlyEnemy.CurrentlyReported);
+
+        var hiddenEnemy = tracker.Update(List(300, local), Frame(300), 300,
+            hideOwnVillage: true, hiddenVillages: [PlayerVillage.Sand]);
+        Assert.Empty(hiddenEnemy);
+        Assert.Equal(3, tracker.Update(List(400, local), Frame(400), 400).Count);
+    }
+
+    [Fact]
+    public void UnknownLocalVillageFailsClosedAndCacheNeverReusesOldAffiliation()
+    {
+        var tracker = new LastKnownPlayerTracker();
+        var local = new MapPlayer(7, "local", 190, 50, 50, true, false) { Village = PlayerVillage.Leaf };
+        var player = new MapPlayer(34, "enemy", 190, 52, 53, false, false) { Village = PlayerVillage.Sand };
+        tracker.Update(List(100, local, player), Frame(100), 100);
+        Assert.Empty(tracker.Update(List(200, local with { Village = PlayerVillage.Unknown }),
+            Frame(200), 200, hideOwnVillage: true));
+        Assert.Empty(tracker.Update(List(300, local, player with { Village = PlayerVillage.Unknown }),
+            Frame(300), 300, hideOwnVillage: true));
+        Assert.Single(tracker.Update(List(400, local), Frame(400), 400)); // Unfiltered cache is intact.
+    }
 }
