@@ -233,6 +233,9 @@ internal sealed class LiveInputController : IOrientationController, IActionExecu
         try
         {
             if (!_allowed(kind)) { LastInputReason = $"{kind}: safety gate changed at dispatch"; return false; }
+            if ((kind == LiveInputKind.Tool || kind == LiveInputKind.Attack && _combatSettings.AttackMode != AutoAttackMode.Melee) &&
+                ManualDirectionHeld())
+            { LastInputReason = "Tecla de direção/giro manual ativa; atalho frontal adiado"; return false; }
             sent = SendInput(1, new[] { down }, Marshal.SizeOf<Input>()) == 1;
             if (!sent)
             {
@@ -265,6 +268,10 @@ internal sealed class LiveInputController : IOrientationController, IActionExecu
     }
 
     public static bool IsDown(int key) => (GetAsyncKeyState(key) & 0x8000) != 0;
+    private bool ManualDirectionHeld() =>
+        new[] { Direction.Left, Direction.Up, Direction.Right, Direction.Down }
+            .Any(d => !_heldMovement.Owns(d) && IsDown(MovementKey(d))) ||
+        new[] { 0x24, 0x23, 0x2E, 0x22 }.Any(IsDown);
     public static bool EmergencyPending()
     {
         if ((GetAsyncKeyState(0x7B) & 0x8001) != 0) Interlocked.Exchange(ref _emergencyLatched, 1);

@@ -48,6 +48,7 @@ public static class CalibrationWatch
                         new { p.Slot, p.Name, p.X, p.Y, p.IsLocal, p.IsSelected }).ToArray(),
                     MapUnreadable = provider.MapPlayers?.UnreadableSlots,
                     Grid = provider.MapPlayers is { } list ? new { list.GridWidth, list.GridHeight } : null,
+                    View = provider.MapPlayers?.RenderView,
                     Buffs = frame.ObservedActiveBuffs.OrderBy(b => b.Name)
                         .Select(b => new { b.Name, b.RemainingSeconds }).ToArray() };
                 var signature = JsonSerializer.Serialize(stamp);

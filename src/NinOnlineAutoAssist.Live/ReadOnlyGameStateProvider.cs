@@ -274,7 +274,7 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
                     }
                     catch { /* List remains available; overlay projection fails closed without grid dimensions. */ }
                     MapPlayers = new(map, $"{local}:{name}", started, MapPlayersFrame.Filter(players, map), unreadable)
-                    { GridWidth = gridWidth, GridHeight = gridHeight, RenderView = ReadRenderView(player, map, x, y) };
+                    { GridWidth = gridWidth, GridHeight = gridHeight, RenderView = ReadRenderView(player, map, x, y, gridWidth, gridHeight) };
                     MapPlayersStatus = $"{MapPlayers.Players.Count} registros locais no mapa {map}";
                 }
                 catch (Exception ex) { MapPlayers = null; MapPlayersStatus = $"Lista indisponível: {ex.Message}"; }
@@ -347,7 +347,7 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
     private int ReadMapIdentity(ClrType roots, ClrAppDomain domain, ClrObject mapObject) => Profile.MapIdentityInRoots
         ? StaticInt(roots, Profile.MapIdentity, domain) : Field<int>(mapObject, Profile.MapIdentity);
 
-    private RenderViewObservation? ReadRenderView(ClrObject local, int map, double x, double y)
+    private RenderViewObservation? ReadRenderView(ClrObject local, int map, double x, double y, int? gridWidth, int? gridHeight)
     {
         // Exact-build observations only. Unknown builds never guess a camera or fall back to player center.
         var viewMapping = Profile.Sha256 switch
@@ -356,6 +356,8 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
                 => (Owner: "wMWLcvW2ArKRj9nhY3bg.TyDWRPW2l05BDoekEyUt", Field: "xgcWweIHSdJ"),
             "C3F7DF26A0C00D72291DEFC67F219BD54909AE9062160329DE4AD6956110CB72"
                 => (Owner: "bfh79MUAUg04A0AkOIDe.XueWakUAoTIroqRVa3KM", Field: "AwCUSQuJJUb"),
+            "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634"
+                => (Owner: "Nvx4GuISaVJTgraaxmuY.ddoPbRISG5UMbcXPLWJC", Field: "rU0I2D0I0yb"),
             _ => (Owner: "", Field: "")
         };
         if (viewMapping.Owner.Length == 0) { RenderViewStatus = "Hash sem view calibrada"; return null; }
@@ -379,11 +381,19 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
                 view.ReadField<float>("myRotation") != 0 ||
                 viewport.ReadField<float>("Left") != 0 || viewport.ReadField<float>("Top") != 0 ||
                 viewport.ReadField<float>("Width") != 1 || viewport.ReadField<float>("Height") != 1 ||
-                Math.Abs(x * LiveMemoryProfile.PixelsPerTile - cx) > sx / 2 + 32 ||
-                Math.Abs(y * LiveMemoryProfile.PixelsPerTile - cy) > sy / 2 + 32 ||
+                 (Profile.Sha256 != "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634" &&
+                     (Math.Abs(x * LiveMemoryProfile.PixelsPerTile - cx) > sx / 2 + 32 ||
+                      Math.Abs(y * LiveMemoryProfile.PixelsPerTile - cy) > sy / 2 + 32)) ||
                 local.ReadStringField(Profile.Name, 64) != _identity.Name || Field<int>(local, Profile.Map) != map ||
                 field.ReadObject(domain).Address != view.Address)
             { RenderViewStatus = "View inconsistente com mapa/personagem"; return null; }
+            if (Profile.Sha256 == "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634")
+            {
+                var calibrated = map == 190 ? OverlayProjection.CalibratedMap190(x, y,
+                    gridWidth.GetValueOrDefault(), gridHeight.GetValueOrDefault(), sx, sy) : null;
+                RenderViewStatus = calibrated is null ? "Câmera visual não calibrada neste mapa" : "Câmera visual calibrada no mapa 190";
+                return calibrated;
+            }
             RenderViewStatus = "View observada";
             return new(cx, cy, sx, sy);
         }

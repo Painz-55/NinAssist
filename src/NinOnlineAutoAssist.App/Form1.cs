@@ -258,10 +258,14 @@ public sealed class Form1 : Form
         var playersTab = new TabPage("PLAYERS NO MAPA") { BackColor = Panel };
         var logTab = new TabPage("LOG") { BackColor = Panel };
         logTab.Controls.Add(_rtbLog);
-        _playersGrid = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false,
+        _playersGrid = new SmoothPlayersGrid { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false,
             AllowUserToDeleteRows = false, RowHeadersVisible = false, MultiSelect = false,
             SelectionMode = DataGridViewSelectionMode.FullRowSelect, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None,
-            BackgroundColor = Panel, ForeColor = Fg, EnableHeadersVisualStyles = false };
+            BackgroundColor = Panel, ForeColor = Fg, EnableHeadersVisualStyles = false,
+            BorderStyle = BorderStyle.None, CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
+            GridColor = Color.FromArgb(39, 47, 58), ColumnHeadersHeight = 36,
+            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+            RowTemplate = { Height = 31 } };
         _playersGrid.DefaultCellStyle.BackColor = Panel;
         _playersGrid.DefaultCellStyle.ForeColor = Fg;
         _playersGrid.ColumnHeadersDefaultCellStyle.BackColor = PanelAlt;
@@ -321,13 +325,7 @@ public sealed class Form1 : Form
 
     private void RefreshPlayers()
     {
-        // The UI timer blinks a table-selected row between 200 ms map-list reads.
-        var highlightOn = _playersPlot.HasSelectedRow && (Environment.TickCount64 / 350) % 2 == 0;
-        if (_playersPlot.SelectedHighlightOn != highlightOn)
-        {
-            _playersPlot.SelectedHighlightOn = highlightOn;
-            _playersPlot.Invalidate();
-        }
+        // Selection stays highlighted instead of deliberately blinking every 350 ms.
         var list = _ctx?.MapPlayers;
         var hideOwnVillage = _hideOwnVillage.Checked;
         var own = list?.LocalVillage ?? PlayerVillage.Unknown;
@@ -339,23 +337,28 @@ public sealed class Form1 : Form
         var hidden = _villageFilters.Where(entry => entry.Key != own && entry.Value.Checked)
             .Select(entry => entry.Key).ToArray();
         var filterMask = (hideOwnVillage ? 1 : 0) | hidden.Aggregate(0, (mask, village) => mask | (1 << (int)village));
-        _playersStatus.Text = list is null
+        var status = list is null
             ? "Lista indisponível/antiga — aguardando leitura válida. " + (_ctx?.MapPlayersStatus ?? "Desconectado")
             : hideOwnVillage && !PlayerVillages.IsKnown(list.LocalVillage)
                 ? "Filtro ativo: sua vila ainda é desconhecida; aguardando leitura válida.\nNenhum personagem será classificado como de outra vila sem essa informação."
                 : (_ctx?.MapPlayersStatus ?? "") + (hideOwnVillage || hidden.Length > 0
                     ? "\nFiltros apenas visuais; não alteram automações. Estados de invisibilidade/transformação não mapeados."
                     : "\nSem filtro de visibilidade/aparência. Estados de invisibilidade/transformação ainda não mapeados; não garante todos os jogadores do servidor.");
+        if (_playersStatus.Text != status) _playersStatus.Text = status;
         if (ReferenceEquals(list, _shownPlayers) && filterMask == _shownVillageFilterMask) return;
+        var previousList = _shownPlayers;
         _shownPlayers = list;
         _shownVillageFilterMask = filterMask;
         if (list is null)
         {
-            _refreshingPlayers = true;
-            try { _playersGrid.Rows.Clear(); }
-            finally { _refreshingPlayers = false; }
-            _selectedMapSlot = _playersPlot.SelectedRowSlot = null;
-            _playersPlot.Offsets = []; _playersPlot.Invalidate(); return;
+            // A transient failed read is not a map departure. Keep the last table, visibly
+            // marked as stale above, instead of erasing and rebuilding it on the next tick.
+            return;
+        }
+        if (previousList is { } previous && (previous.Map != list.Map || previous.LocalId != list.LocalId))
+        {
+            _selectedMapSlot = null;
+            _playersPlot.ResetScale();
         }
         var numberedPlayers = list.NumberedForDisplay(hideOwnVillage, hidden);
         var visiblePlayers = numberedPlayers.Select(entry => entry.Player).ToArray();
@@ -365,15 +368,31 @@ public sealed class Form1 : Form
         if (!visiblePlayers.Any(p => p.Slot == _selectedMapSlot)) _selectedMapSlot = null;
         _playersPlot.SelectedRowSlot = _selectedMapSlot;
         _playersPlot.Invalidate();
-        var sameSlots = _playersGrid.Rows.Count == visiblePlayers.Length && visiblePlayers.Select((p, i) =>
-            Equals(_playersGrid.Rows[i].Tag, p.Slot)).All(v => v);
         _refreshingPlayers = true;
         try
         {
-            if (!sameSlots) _playersGrid.Rows.Clear();
+            _playersGrid.SuspendLayout();
+            var wanted = visiblePlayers.Select(p => p.Slot).ToHashSet();
+            for (var i = _playersGrid.Rows.Count - 1; i >= 0; i--)
+                if (_playersGrid.Rows[i].Tag is not int slot || !wanted.Contains(slot))
+                    _playersGrid.Rows.RemoveAt(i);
             for (var i = 0; i < visiblePlayers.Length; i++)
             {
                 var p = visiblePlayers[i];
+                var existing = -1;
+                for (var j = i; j < _playersGrid.Rows.Count; j++)
+                    if (Equals(_playersGrid.Rows[j].Tag, p.Slot)) { existing = j; break; }
+                if (existing < 0)
+                {
+                    _playersGrid.Rows.Insert(i, 1);
+                    _playersGrid.Rows[i].Tag = p.Slot;
+                }
+                else if (existing != i)
+                {
+                    var row = _playersGrid.Rows[existing];
+                    _playersGrid.Rows.RemoveAt(existing);
+                    _playersGrid.Rows.Insert(i, row);
+                }
                 var position = p.X is { } x && p.Y is { } y ? $"{x:0.0}, {y:0.0}" : "Desconhecida";
                 var distance = player is not null && p.X is { } px && p.Y is { } py
                     ? Math.Sqrt(Math.Pow(px - player.PositionX, 2) + Math.Pow(py - player.PositionY, 2)).ToString("0.0") : "?";
@@ -381,8 +400,9 @@ public sealed class Form1 : Form
                 var dy = player is not null && p.Y is { } vy ? (vy - player.PositionY).ToString("+0.0;-0.0;0.0") : "?";
                 object[] values = { numberedPlayers[i].Number, p.Slot, p.Name, PlayerVillages.Label(p.Village), position, distance, dx, dy,
                     p.IsLocal ? "VOCÊ" : p.IsSelected ? "ALVO" : "—", "Não mapeada", "Não mapeada" };
-                if (sameSlots) _playersGrid.Rows[i].SetValues(values);
-                else { var row = _playersGrid.Rows.Add(values); _playersGrid.Rows[row].Tag = p.Slot; }
+                for (var column = 0; column < values.Length; column++)
+                    if (!Equals(_playersGrid.Rows[i].Cells[column].Value, values[column]))
+                        _playersGrid.Rows[i].Cells[column].Value = values[column];
                 var color = PlayerVillages.ColorArgb(p.Village) is { } argb ? Color.FromArgb(argb) : Fg;
                 foreach (var column in new[] { 2, 3 })
                 {
@@ -391,15 +411,11 @@ public sealed class Form1 : Form
                     style.SelectionBackColor = PanelAlt;
                 }
             }
-            if (!sameSlots)
-            {
-                _playersGrid.ClearSelection();
-                if (_selectedMapSlot is { } selectedSlot)
-                    foreach (DataGridViewRow row in _playersGrid.Rows)
-                        if (Equals(row.Tag, selectedSlot)) { row.Selected = true; break; }
-            }
+            foreach (DataGridViewRow row in _playersGrid.Rows)
+                if (row.Selected != Equals(row.Tag, _selectedMapSlot))
+                    row.Selected = Equals(row.Tag, _selectedMapSlot);
         }
-        finally { _refreshingPlayers = false; }
+        finally { _playersGrid.ResumeLayout(); _refreshingPlayers = false; }
     }
 
     private Control BuildLegend()
@@ -467,7 +483,7 @@ public sealed class Form1 : Form
         _lblProvider.Text = _ctx?.Status ?? "Desconectado — leitura indisponível";
         var connected = _ctx?.Provider is not null && _session.Access.IsValid;
         var profile = _ctx?.Provider?.Profile;
-        bool Approved(LiveInputKind kind) => profile is { ActuationValidated: true } &&
+        bool Approved(LiveInputKind kind) => LocalTrialPolicy.CanActuate(profile) &&
             (!profile.ExternalProfile || profile.ValidatedInputKinds.Contains(kind.ToString(), StringComparer.Ordinal));
         var attack = Allowed(AppFeature.AutoAttack) && profile?.ApprovesAttackMode(_config.CombatAssist.AttackMode.ToString()) == true &&
             (_config.CombatAssist.AttackMode != AutoAttackMode.Fan ||
@@ -487,6 +503,10 @@ public sealed class Form1 : Form
     private void DisconnectFromGame()
     {
         StopOverlay();
+        _shownPlayers = null;
+        _selectedMapSlot = _playersPlot.SelectedRowSlot = null;
+        _playersPlot.ResetScale();
+        _playersGrid.Rows.Clear();
         _observedCastIds.Reset();
         if (_ctx is not null)
         {
@@ -589,9 +609,9 @@ public sealed class Form1 : Form
         RefreshModuleButton(_btnCastTurn, "AUTO CAST TURN");
         RefreshModuleButton(_btnSubPunish, "SUBPUNISH TAI/ÁGUA");
         var profile = _ctx?.Provider?.Profile;
-        var attackApproved = Allowed(AppFeature.AutoAttack) && profile is { ActuationValidated: true } &&
+        var attackApproved = Allowed(AppFeature.AutoAttack) && LocalTrialPolicy.CanActuate(profile) &&
             profile.ApprovesAttackMode(_config.CombatAssist.AttackMode.ToString());
-        var toolApproved = Allowed(AppFeature.Tool) && profile is { ActuationValidated: true } &&
+        var toolApproved = Allowed(AppFeature.Tool) && LocalTrialPolicy.CanActuate(profile) &&
             (!profile.ExternalProfile || profile.ValidatedInputKinds.Contains(nameof(LiveInputKind.Tool), StringComparer.Ordinal));
         RefreshModuleButton(_btnCombat, attackApproved && toolApproved ? "AA + TOOL"
             : attackApproved ? "AA (TOOL BLOQUEADO)" : toolApproved ? "TOOL (AA BLOQUEADO)" : "AA / TOOL BLOQUEADOS");
@@ -710,27 +730,43 @@ public sealed class Form1 : Form
     private void RefreshOverlay()
     {
         if (!_overlayEnabled || !Allowed(AppFeature.MapPlayers) || _ctx?.Provider is not { } provider ||
-            _ctx.Frame is not { } frame || _ctx.MapPlayers is not { } list ||
             !LiveInputController.IsGameForeground(provider.ProcessId) ||
             PlayerPositionOverlay.GameClientBounds(provider.ProcessId) is not { } bounds)
         { _overlay?.Hide(); return; }
+        if (_ctx.Frame is not { } frame || _ctx.MapPlayers is not { } list)
+        { _overlay?.MarkUnavailable(_ctx.Frame?.Cast?.Active == true ? 2500 : 350); return; }
+        if (list.Map != frame.Map || list.LocalId != frame.Snapshot.Player.Id)
+        { _overlay?.ClearDots(); return; }
         var now = _ctx.ObservationNowMs;
         // The full client map is considered; only points actually inside the render view are drawn.
         var ownVillage = list.LocalVillage;
         var hiddenVillages = _villageFilters.Where(entry => entry.Key != ownVillage && entry.Value.Checked)
             .Select(entry => entry.Key).ToArray();
-        var candidates = _lastKnownPlayers.Update(list, frame, now, _hideOwnVillage.Checked, hiddenVillages);
+        var maxCensusAge = _btnCastTurn.Tag is true ? 650 : 300;
+        // The map census can be deliberately paused during a cast. On this exact build/map,
+        // refresh only the screenshot-calibrated camera from the freshly observed local actor;
+        // remote world positions remain last-known until a new census arrives.
+        var displayList = provider.Profile.Sha256 == "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634" &&
+            frame.Map == 190 && list.RenderView is { } view
+            ? list with { RenderView = OverlayProjection.CalibratedMap190(frame.Snapshot.Player.PositionX,
+                frame.Snapshot.Player.PositionY, list.GridWidth.GetValueOrDefault(), list.GridHeight.GetValueOrDefault(),
+                view.SizeX, view.SizeY) }
+            : list;
+        if (!displayList.IsCurrent(frame, now) || now - displayList.CapturedAtMs > maxCensusAge || displayList.RenderView is null)
+        { _overlay?.MarkUnavailable(frame.Cast?.Active == true ? 2500 : 350); return; }
+        var candidates = _lastKnownPlayers.Update(displayList, frame, now, _hideOwnVillage.Checked, hiddenVillages,
+            maxCensusAge);
         var projected = candidates.Select(p => (Marker: p,
-                Point: OverlayProjection.Project(p, frame, list, bounds.Width, bounds.Height)))
+                Point: OverlayProjection.Project(p, frame, displayList, bounds.Width, bounds.Height)))
             .Where(p => p.Point.HasValue)
             .Select(p => (p.Marker, new PointF((float)p.Point!.Value.X, (float)p.Point!.Value.Y))).ToArray();
         if (projected.Length == 0)
         {
-            _overlay?.Hide();
+            _overlay?.ClearDots();
             return;
         }
         _overlay ??= new PlayerPositionOverlay();
-        _overlay.UpdateDots(bounds, projected);
+        _overlay.UpdateDots(bounds, frame.Map, frame.Snapshot.Player.Id, projected);
     }
 
     // ═══════════════════════════════ status & log ═══════════════════════════════

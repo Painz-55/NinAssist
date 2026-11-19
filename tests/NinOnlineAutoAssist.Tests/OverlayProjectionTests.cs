@@ -30,4 +30,17 @@ public sealed class OverlayProjectionTests
         Assert.Null(OverlayProjection.Project(marker, Frame(map: 191), Map(), 1280, 800));
         Assert.Null(OverlayProjection.Project(marker with { OffsetX = 80 }, Frame(), Map(), 1280, 800));
     }
+
+    [Fact]
+    public void Map190ScreenshotCalibrationTracksLocalMotionAndClampsAtMapEdges()
+    {
+        var marker = new NearbyPlayerMarkers.Marker(77, "KageSlayer", 59.1875 - 48.958775, 46.40625 - 49.923656, false);
+        var view = OverlayProjection.CalibratedMap190(48.958775, 49.923656, 101, 101, 1328, 747);
+        Assert.NotNull(view);
+        var point = OverlayProjection.Project(marker, Frame(48.958775, 49.923656), Map(view), 1920, 1080);
+        Assert.InRange(point!.Value.X, 1428, 1435);
+        Assert.InRange(point.Value.Y, 370, 385);
+        Assert.Equal(664, OverlayProjection.CalibratedMap190(5, 50, 101, 101, 1328, 747)!.CenterX);
+        Assert.Null(OverlayProjection.CalibratedMap190(50, 50, 200, 101, 1328, 747));
+    }
 }

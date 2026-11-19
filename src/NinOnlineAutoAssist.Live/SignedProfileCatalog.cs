@@ -75,6 +75,10 @@ public static class SignedProfileCatalog
             if (village.ValueKind != JsonValueKind.Null) RequireField(element, "Village");
             // A publisher must explicitly mark a passively validated mapping as safe for keyboard dispatch.
             _ = element.GetProperty("ActuationValidated").GetBoolean();
+            var trial = element.TryGetProperty("ExperimentalTrial", out var trialFlag) && trialFlag.GetBoolean();
+            if (trial && (element.GetProperty("ActuationValidated").GetBoolean() ||
+                !element.GetProperty("Id").GetString()!.StartsWith("LOCAL TRIAL ", StringComparison.Ordinal)))
+                throw new InvalidOperationException("Invalid local trial profile");
             _ = element.GetProperty("MapIdentityInRoots").GetBoolean();
             var actions = element.GetProperty("ValidatedInputKinds");
             if (actions.ValueKind != JsonValueKind.Array || actions.GetArrayLength() > 7 ||
@@ -83,7 +87,7 @@ public static class SignedProfileCatalog
                 throw new InvalidOperationException("Invalid approved input list");
             if (actions.EnumerateArray().Select(a => a.GetString()).Distinct().Count() != actions.GetArrayLength())
                 throw new InvalidOperationException("Duplicate approved input kind");
-            if (!element.GetProperty("ActuationValidated").GetBoolean() && actions.GetArrayLength() != 0)
+            if (!element.GetProperty("ActuationValidated").GetBoolean() && !trial && actions.GetArrayLength() != 0)
                 throw new InvalidOperationException("Read-only profile cannot approve input");
             var modes = element.TryGetProperty("ValidatedAttackModes", out var modeList) ? modeList : default;
             if (modes.ValueKind != JsonValueKind.Undefined && (modes.ValueKind != JsonValueKind.Array ||
@@ -92,7 +96,7 @@ public static class SignedProfileCatalog
                 modes.EnumerateArray().Select(m => m.GetString()).Distinct().Count() != modes.GetArrayLength()))
                 throw new InvalidOperationException("Invalid approved attack modes");
             if (modes.ValueKind == JsonValueKind.Array && modes.GetArrayLength() > 0 &&
-                (!element.GetProperty("ActuationValidated").GetBoolean() ||
+                 (!element.GetProperty("ActuationValidated").GetBoolean() && !trial ||
                  !actions.EnumerateArray().Any(a => a.GetString() == "Attack")))
                 throw new InvalidOperationException("Attack mode requires explicit Attack approval");
             // No inherited obfuscated defaults: all names are explicitly present in the signed payload.

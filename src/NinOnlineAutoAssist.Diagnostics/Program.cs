@@ -64,7 +64,9 @@ if (args.Length == 4 && args[0] == "--calibration-snapshot" && int.TryParse(args
     Console.WriteLine(JsonSerializer.Serialize(new { provider.Status, provider.Frame, provider.NavigationStatus,
         Navigation = provider.Navigation is { } n ? new { n.Map, n.Width, n.Height, n.DynamicHazardsKnown } : null,
         provider.MapPlayersStatus, MapPlayers = provider.MapPlayers?.Players.Count,
-         Grid = provider.MapPlayers is { } mapPlayers ? new { mapPlayers.GridWidth, mapPlayers.GridHeight, mapPlayers.RenderView } : null,
+         Grid = provider.MapPlayers is { } mapPlayers ? new { mapPlayers.GridWidth, mapPlayers.GridHeight, mapPlayers.RenderView,
+             LocalVillage = mapPlayers.LocalVillage.ToString(),
+             Players = mapPlayers.Players.Select(p => new { p.Slot, p.Name, Village = p.Village.ToString(), p.IsLocal }) } : null,
          provider.RenderViewStatus }));
     return provider.Frame is null ? 1 : 0;
 }

@@ -105,8 +105,18 @@ public sealed class AutoCastTurnEngine
     {
         var now = _clock.NowMs;
         InFinalWindow = false;
-        if (!allowed || !Fresh(frame, now) || frame!.Cast is not { Valid: true } cast || !frame.Snapshot.Player.IsAlive || !TimingValid(frame, cast, now))
-        { Reset(); Status = !allowed ? "Auto Cast Turn bloqueado/OFF" : "Auto Cast Turn: cast desconhecido/dados antigos"; return; }
+        if (!allowed) { Reset(); Status = "Auto Cast Turn bloqueado/OFF"; return; }
+        if (!Fresh(frame, now))
+        {
+            // A single missed census cannot become an idle edge or trigger a turn. Keep the
+            // prior cast context briefly, then require a fresh same-cast sample; a longer gap
+            // still resets and refuses the current cast.
+            if (_lastCapture >= 0 && now >= _lastCapture && now - _lastCapture <= 400)
+            { Status = "Auto Cast Turn: leitura temporariamente indisponível; sem giro"; return; }
+            Reset(); Status = "Auto Cast Turn: lacuna de leitura; aguardando novo cast"; return;
+        }
+        if (frame!.Cast is not { Valid: true } cast || !frame.Snapshot.Player.IsAlive || !TimingValid(frame, cast, now))
+        { Reset(); Status = "Auto Cast Turn: cast desconhecido/dados antigos"; return; }
         if (_contextPlayer != frame.Snapshot.Player.Id || _contextMap != frame.Map)
         {
             Reset(); _contextPlayer = frame.Snapshot.Player.Id; _contextMap = frame.Map; _lastStarted = 0;
@@ -148,7 +158,9 @@ public sealed class AutoCastTurnEngine
         if (remaining <= 0) { _consumed = true; Status = "Auto Cast Turn: janela final perdida; sem giro atrasado"; return; }
         if (!InFinalWindow || !_sawEarlierProgress || _samples < 2) return;
         var desired = Desired(frame);
-        if (desired == Direction.None || desired == frame.Snapshot.Player.Facing)
+        if (desired == Direction.None)
+        { Status = "Auto Cast Turn: direção cardinal/alvo não observados; sem giro"; return; }
+        if (desired == frame.Snapshot.Player.Facing)
         { Status = "Auto Cast Turn: alinhado; vigiando direção até o fim do cast"; return; }
         // Correct only observed drift, not a busy-loop on the same/pre-command snapshot.
         if (_lastTurnAt is { } last && (now - last < 40 || frame.CapturedAtMs <= last)) return;

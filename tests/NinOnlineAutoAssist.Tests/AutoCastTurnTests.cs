@@ -65,6 +65,37 @@ public sealed class AutoCastTurnTests
         Assert.Equal(0, calls);
     }
 
+    [Fact]
+    public void TransientDiagonalFacingKeepsCastArmedButNeverTurnsUntilCardinalObserved()
+    {
+        var clock = new SimulatedClock(0); var sent = new List<Direction>();
+        var engine = new AutoCastTurnEngine(clock, TestSettings(), direction =>
+        { sent.Add(direction); return TurnResult.Ok(); });
+        engine.Update(Frame(0, Idle), true, false);
+        clock.Advance(100); engine.Update(Frame(100, Active(800)), true, false);
+        clock.Advance(100); engine.Update(Frame(200, Active(600), Direction.None), true, false);
+        clock.Advance(100); engine.Update(Frame(300, Active(90), Direction.None), true, false);
+        Assert.Empty(sent);
+        Assert.Contains("direção cardinal", engine.Status);
+        clock.Advance(40); engine.Update(Frame(340, Active(50), Direction.Down), true, false);
+        Assert.Equal(new[] { Direction.Up }, sent);
+    }
+
+    [Fact]
+    public void BriefMissingFrameNeverDispatchesButDoesNotLoseVerifiedSameCast()
+    {
+        var clock = new SimulatedClock(0); var sent = new List<Direction>();
+        var engine = new AutoCastTurnEngine(clock, TestSettings(), direction =>
+        { sent.Add(direction); return TurnResult.Ok(); });
+        engine.Update(Frame(0, Idle), true, false);
+        clock.Advance(100); engine.Update(Frame(100, Active(800)), true, false);
+        clock.Advance(100); engine.Update(null, true, false);
+        Assert.Empty(sent);
+        clock.Advance(100); engine.Update(Frame(300, Active(200)), true, false);
+        clock.Advance(100); engine.Update(Frame(400, Active(80)), true, false);
+        Assert.Equal(new[] { Direction.Up }, sent);
+    }
+
     [Theory]
     [InlineData("enabled-mid-cast")]
     [InlineData("unknown")]

@@ -113,7 +113,9 @@ public sealed class LiveContext : IDisposable
             finally { foreach (var process in processes) process.Dispose(); }
             Provider = new ReadOnlyGameStateProvider(pid, detectCharacterAutomatically ? "" : config.Live.CharacterName, _clock);
             Log.Log(LogLevel.Info, $"Perfil detectado: {Provider.Profile.Id}; instalação: {Provider.GameDirectory}; hashes do par verificados");
-            if (!Provider.Profile.ActuationValidated)
+            if (Provider.Profile.ExperimentalTrial)
+                Log.Log(LogLevel.Warning, "ENSAIO LOCAL NÃO VALIDADO: inputs exigem permissões, ativação manual, foco no jogo e F12 para parar.");
+            else if (!Provider.Profile.ActuationValidated)
                 Log.Log(LogLevel.Warning, "Perfil externo apenas para leitura: automação bloqueada até validação passiva e assinatura de um perfil aprovado.");
             LiveKeySettings.Validate(config.Live.PunishKeys, config.Live.TurnActivationKeys);
             _input = new LiveInputController(CanDispatch, Log, Provider.GameDirectory,
@@ -196,7 +198,7 @@ public sealed class LiveContext : IDisposable
                         // Map census is display-only and relatively expensive. During a live Substitution
                         // window, prioritize distinct buff samples over refreshing the display list.
                         Provider.ReadMapPlayers = !_subReadBurst && !castReadBurst && _access.Allows(AppFeature.MapPlayers) && (oldList is null || oldList.Map != Volatile.Read(ref _frame)?.Map ||
-                            _clock.NowMs - oldList.CapturedAtMs >= (_overlayEnabled ? 80 : 200));
+                            _clock.NowMs - oldList.CapturedAtMs >= (_castTurnEnabled || _combatEnabled ? 350 : _overlayEnabled ? 100 : 200));
                         if (!_access.Allows(AppFeature.MapPlayers)) Volatile.Write(ref _mapPlayers, null);
                         Provider.GetSnapshot();
                         Volatile.Write(ref _frame, Provider.Frame);
@@ -345,9 +347,9 @@ public sealed class LiveContext : IDisposable
 
     private SafetyDecision CheckSafety(LiveInputKind kind)
     {
-        if (Provider?.Profile.ActuationValidated != true)
+        if (!LocalTrialPolicy.CanActuate(Provider?.Profile))
             return new(false, "Perfil de jogo não aprovado para enviar teclas");
-        if (Provider.Profile.ExternalProfile && !Provider.Profile.ValidatedInputKinds.Contains(kind.ToString(), StringComparer.Ordinal))
+        if (Provider!.Profile.ExternalProfile && !Provider.Profile.ValidatedInputKinds.Contains(kind.ToString(), StringComparer.Ordinal))
             return new(false, $"{kind}: sinal ainda não validado para esta build");
         if (kind == LiveInputKind.Punish && !PunishComboApproved)
             return new(false, "Combo SubPunish bloqueado neste perfil de giro experimental");
@@ -369,6 +371,11 @@ public sealed class LiveContext : IDisposable
         var frame = Volatile.Read(ref _frame);
         if (frame is null || Volatile.Read(ref _settingsBoundToCharacter) != frame.PlayerName)
             return new(false, "Configuração do personagem ainda não verificada; inputs OFF");
+        if (Provider!.Profile.ExperimentalTrial && (frame.Map != 190 || frame.PlayerName != "Raizen Kaen"))
+            return new(false, "Ensaio local restrito a Raizen no mapa 190");
+        if (Provider.Profile.ExperimentalTrial && frame.Snapshot.Player.Facing == Direction.None &&
+            kind is LiveInputKind.Turning or LiveInputKind.Punish or LiveInputKind.Attack)
+            return new(false, "Ensaio de giro/combate exige direção cardinal observada");
         var now = _clock.NowMs;
         var foreground = Provider is not null && LiveInputController.IsGameForeground(Provider.ProcessId);
         var emergency = LiveInputController.EmergencyPending();
@@ -438,6 +445,9 @@ public sealed class LiveContext : IDisposable
             return false;
         if (kind is LiveInputKind.Attack or LiveInputKind.Tool)
             return _dispatchingCombat == kind && !SubNeedsPriority &&
+                (kind == LiveInputKind.Attack && Config.CombatAssist.AttackMode == AutoAttackMode.Melee ||
+                 CombatDispatchFreshness.Allows(current, _clock.NowMs)) &&
+                current.Snapshot.Player.Facing == dispatch.Snapshot.Player.Facing &&
                 current.Snapshot.Target?.Id == dispatch.Snapshot.Target?.Id && CombatGeometry.InRange(current,
                     kind == LiveInputKind.Attack ? CombatAction.Attack : CombatAction.Tool, Config.CombatAssist) &&
                 (kind != LiveInputKind.Attack || Config.CombatAssist.AttackMode != AutoAttackMode.Fan ||

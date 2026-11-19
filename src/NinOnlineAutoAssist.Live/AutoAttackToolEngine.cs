@@ -6,6 +6,16 @@ namespace NinOnlineAutoAssist.Live;
 
 public enum CombatAction { Attack, Tool }
 
+public static class CombatDispatchFreshness
+{
+    // A projectile/frontal attack must use a post-read, near-immediate orientation sample.
+    // Slow map-census frames may still update the UI, but cannot authorize this key.
+    public static bool Allows(LiveFrame? frame, long nowMs, int maximumAgeMs = 80) =>
+        frame is not null && nowMs >= frame.CapturedAtMs &&
+        nowMs - frame.CapturedAtMs <= maximumAgeMs &&
+        frame.ReadDurationMs is >= 0 && frame.ReadDurationMs <= maximumAgeMs;
+}
+
 /// <summary>Geometric attempt filter, NOT a claim about the server's exact hitbox or projectile collision.</summary>
 public static class CombatGeometry
 {
@@ -95,15 +105,17 @@ public sealed class AutoAttackToolEngine
         if (now < frame.CapturedAtMs || now - frame.CapturedAtMs > 500 || frame.ReadDurationMs is < 0 or > 500)
         { Status = "AA/Tool: dados antigos"; return; }
         if (higherPriorityBusy) { Status = "AA/Tool: aguardando SubPunish/giro"; return; }
+        var frontalFresh = CombatDispatchFreshness.Allows(frame, now);
         var attackDirection = _settings.AttackMode == AutoAttackMode.Melee
             ? Direction.None : CombatGeometry.AttackDirection(frame, _settings);
         var attack = attackAllowed && _settings.UseAttack && (_lastAttack is null || now - _lastAttack >= _settings.AttackIntervalMs) &&
             (_settings.AttackMode == AutoAttackMode.Melee
                 ? CombatGeometry.InRange(frame, CombatAction.Attack, _settings)
-                : attackDirection != Direction.None && _prepareAttack is not null);
+                : frontalFresh && attackDirection != Direction.None && _prepareAttack is not null);
         var tool = toolAllowed && _settings.UseTool && (_lastTool is null || now - _lastTool >= _settings.ToolIntervalMs) &&
-            CombatGeometry.InRange(frame, CombatAction.Tool, _settings);
-        if (!attack && !tool) { Status = "AA/Tool: aguardando intervalo/alcance/alinhamento frontal"; return; }
+            frontalFresh && CombatGeometry.InRange(frame, CombatAction.Tool, _settings);
+        if (!attack && !tool) { Status = frontalFresh ? "AA/Tool: aguardando intervalo/alcance/alinhamento frontal"
+            : "AA/Tool: aguardando leitura rápida de direção (sem gastar intervalo)"; return; }
         var selected = tool && (!attack || _preferTool) ? CombatAction.Tool : CombatAction.Attack;
         if (selected == CombatAction.Attack && _settings.AttackMode is AutoAttackMode.Fan or AutoAttackMode.HisuyFan)
         {

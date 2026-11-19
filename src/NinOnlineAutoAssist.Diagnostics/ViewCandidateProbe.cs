@@ -26,9 +26,16 @@ public static class ViewCandidateProbe
             (candidate && (profile.ActuationValidated || !profile.ExternalProfile ||
                 profile.ValidatedInputKinds.Length != 0 || profile.ValidatedAttackModes.Length != 0)))
             throw new InvalidOperationException("Exact-pair read-only profile required");
-        var oldBuild = gameHash == "3B1AAF914AE0EA2268CEE6C6E95960C2A04CDAC383E0C540D98752B12EF96842";
-        if (!oldBuild && gameHash != "C3F7DF26A0C00D72291DEFC67F219BD54909AE9062160329DE4AD6956110CB72")
-            throw new InvalidOperationException("View owner is build-specific; no fallback");
+        var mapping = gameHash switch
+        {
+            "3B1AAF914AE0EA2268CEE6C6E95960C2A04CDAC383E0C540D98752B12EF96842"
+                => (Owner: "wMWLcvW2ArKRj9nhY3bg.TyDWRPW2l05BDoekEyUt", Fields: new[] { "wdPWwfhkUBE", "xgcWweIHSdJ" }),
+            "C3F7DF26A0C00D72291DEFC67F219BD54909AE9062160329DE4AD6956110CB72"
+                => (Owner: "bfh79MUAUg04A0AkOIDe.XueWakUAoTIroqRVa3KM", Fields: new[] { "uFEUSWgHkBt", "AwCUSQuJJUb" }),
+            "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634"
+                => (Owner: "Nvx4GuISaVJTgraaxmuY.ddoPbRISG5UMbcXPLWJC", Fields: new[] { "VlSI2dlUpTI", "rU0I2D0I0yb" }),
+            _ => throw new InvalidOperationException("View owner is build-specific; no fallback")
+        };
         using var target = DataTarget.AttachToProcess(pid, suspend: false);
         using var runtime = target.ClrVersions.Single().CreateRuntime();
         runtime.FlushCachedData();
@@ -40,10 +47,8 @@ public static class ViewCandidateProbe
         var local = roots.GetStaticFieldByName(profile.Players)!.ReadObject(domain).AsArray().GetObjectValue(index);
         if (local.IsNull || local.ReadStringField(profile.Name, 64) != character)
             throw new InvalidOperationException("Local identity changed");
-        var owner = module.GetTypeByName(oldBuild ? "wMWLcvW2ArKRj9nhY3bg.TyDWRPW2l05BDoekEyUt"
-            : "bfh79MUAUg04A0AkOIDe.XueWakUAoTIroqRVa3KM")!;
-        var views = (oldBuild ? new[] { "wdPWwfhkUBE", "xgcWweIHSdJ" }
-            : new[] { "uFEUSWgHkBt", "AwCUSQuJJUb" }).Select(name =>
+        var owner = module.GetTypeByName(mapping.Owner)!;
+        var views = mapping.Fields.Select(name =>
         {
             try
             {

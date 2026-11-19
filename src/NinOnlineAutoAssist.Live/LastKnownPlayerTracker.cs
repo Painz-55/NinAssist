@@ -14,7 +14,8 @@ public sealed class LastKnownPlayerTracker
     public void Reset() { _entries.Clear(); _map = 0; _localId = null; _lastCapture = -1; }
 
     public IReadOnlyList<NearbyPlayerMarkers.Marker> Update(MapPlayersFrame? list, LiveFrame? frame, long nowMs,
-        bool hideOwnVillage = false, IReadOnlyCollection<PlayerVillage>? hiddenVillages = null)
+        bool hideOwnVillage = false, IReadOnlyCollection<PlayerVillage>? hiddenVillages = null,
+        int maxCensusAgeMs = 300)
     {
         if (frame is null || (_localId is not null &&
             (_localId != frame.Snapshot.Player.Id || _map != frame.Map)))
@@ -22,7 +23,7 @@ public sealed class LastKnownPlayerTracker
         // A failed census is not a disappearance event. Preserve the cache but never project
         // with an old view; only a subsequent fresh list may show last-known positions.
         if (list is null || !list.IsCurrent(frame, nowMs) ||
-            nowMs - list.CapturedAtMs > 300 || list.RenderView is null) return [];
+            nowMs - list.CapturedAtMs > maxCensusAgeMs || list.RenderView is null) return [];
         if (_map != list.Map || _localId != list.LocalId || _lastCapture > list.CapturedAtMs)
         { Reset(); _map = list.Map; _localId = list.LocalId; }
         if (_lastCapture != list.CapturedAtMs)

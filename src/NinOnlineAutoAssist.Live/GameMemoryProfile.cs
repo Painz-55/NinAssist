@@ -8,6 +8,8 @@ public sealed record GameMemoryProfile
     public required string CommonSha256 { get; init; }
     public bool ExternalProfile { get; init; }
     public bool ActuationValidated { get; init; } = true;
+    // A signed, explicitly local archive trial is NOT a validated/released actuation profile.
+    public bool ExperimentalTrial { get; init; }
     public string[] ValidatedInputKinds { get; init; } = [];
     // Null preserves existing signed profiles; false permits a local Substitution-turn trial without combo dispatch.
     public bool? PunishComboValidated { get; init; }
@@ -15,7 +17,7 @@ public sealed record GameMemoryProfile
     public bool? PunishComboRequiresTarget { get; init; }
     // A generic Attack approval is insufficient: modes have different targeting and input semantics.
     public string[] ValidatedAttackModes { get; init; } = [];
-    public bool ApprovesAttackMode(string mode) => ActuationValidated &&
+    public bool ApprovesAttackMode(string mode) => (ActuationValidated || ExperimentalTrial) &&
         ValidatedInputKinds.Contains("Attack", StringComparer.Ordinal) &&
         ValidatedAttackModes.Contains(mode, StringComparer.Ordinal);
     public string Roots { get; init; } = LiveMemoryProfile.Roots;

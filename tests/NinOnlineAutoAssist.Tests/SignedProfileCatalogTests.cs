@@ -294,6 +294,33 @@ public sealed class SignedProfileCatalogTests
         Assert.Equal(1, updated.SelectedTarget?.PlayerKind);
     }
 
+    [Fact]
+    public void NovemberEighteenthReleaseUsesExactPairOnlyInSignedPackage()
+    {
+        var directory = Path.Combine(AppContext.BaseDirectory, "compatibility");
+        const string game = "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634";
+        const string common = "2E1F85F4A04014A13C0EF50EA803C2D2CF22227A082FF67C0668620E7E3A3DF7";
+        GameMemoryProfile? Select(string name, string commonHash = common) => SignedProfileCatalog.VerifyAndSelect(
+            File.ReadAllBytes(Path.Combine(directory, name + ".json")),
+            Convert.FromBase64String(File.ReadAllText(Path.Combine(directory, name + ".json.sig")).Trim()),
+            SignedProfileCatalog.PublicKey, game, commonHash);
+        Assert.Null(Select("profiles"));
+        Assert.Null(Select("package-profiles", new string('0', 64)));
+        var profile = Assert.IsType<GameMemoryProfile>(Select("package-profiles"));
+        Assert.True(profile.ActuationValidated);
+        Assert.False(profile.ExperimentalTrial);
+        Assert.Equal(7, profile.ValidatedInputKinds.Length);
+        Assert.True(profile.ApprovesAttackMode("Melee"));
+        Assert.True(profile.ApprovesAttackMode("Fan"));
+        Assert.False(profile.ApprovesAttackMode("HisuyFan"));
+        Assert.True(profile.PunishComboValidated);
+        Assert.True(profile.PunishComboRequiresTarget);
+        Assert.Null(profile.SelectedIndex);
+        Assert.Equal("lYHbHOV2y9f", profile.Facing);
+        Assert.Equal("RgAbE3qsuFC", profile.CastTiming?.PlayerSpell);
+        Assert.Equal("k5jbUEkkWt4", profile.CastTiming?.PlayerEnd);
+    }
+
     private static (byte[] Payload, byte[] Signature, string PublicKey) Sign(object document)
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -462,5 +489,24 @@ public sealed class SignedProfileCatalogTests
         } } });
         Assert.Throws<InvalidOperationException>(() => SignedProfileCatalog.VerifyAndSelect(
             signed.Payload, signed.Signature, signed.PublicKey, p.Sha256, p.CommonSha256));
+    }
+
+    [Fact]
+    public void SignedLocalTrialIsExplicitlyUnvalidatedAndRejectsMislabeling()
+    {
+        var p = GameMemoryProfile.Updated20261104 with { Id = "LOCAL TRIAL test", ExperimentalTrial = true,
+            ActuationValidated = false, ValidatedInputKinds = ["Turning", "Attack"], ValidatedAttackModes = ["Melee"] };
+        var signed = Sign(new { schema = 1, profiles = new[] { p } });
+        var found = SignedProfileCatalog.VerifyAndSelect(signed.Payload, signed.Signature, signed.PublicKey,
+            p.Sha256, p.CommonSha256);
+        Assert.NotNull(found);
+        Assert.False(found.ActuationValidated);
+        Assert.True(found.ExperimentalTrial);
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            var invalid = Sign(new { schema = 1, profiles = new[] { p with { Id = "Official", ActuationValidated = true } } });
+            SignedProfileCatalog.VerifyAndSelect(invalid.Payload, invalid.Signature, invalid.PublicKey,
+                p.Sha256, p.CommonSha256);
+        });
     }
 }

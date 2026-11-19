@@ -6,6 +6,21 @@ public static class OverlayProjection
 {
     private const double PixelsPerTile = 32;
 
+    // 2026-11-18, map 190: a screenshot corroborated the local sprite at screen center and
+    // a second player's world offset, while the only non-null View kept a stale center.
+    // This visual-only calibration must not be extended to unobserved maps or used for input.
+    public static RenderViewObservation? CalibratedMap190(double localX, double localY,
+        int gridWidth, int gridHeight, double sizeX, double sizeY)
+    {
+        if (gridWidth != 101 || gridHeight != 101 || !double.IsFinite(localX) || !double.IsFinite(localY) ||
+            localX < 0 || localX >= gridWidth || localY < 0 || localY >= gridHeight ||
+            !double.IsFinite(sizeX) || !double.IsFinite(sizeY) || sizeX is < 320 or > 8000 ||
+            sizeY is < 240 or > 8000 || sizeX > gridWidth * PixelsPerTile ||
+            sizeY > gridHeight * PixelsPerTile) return null;
+        return new(Math.Clamp(localX * PixelsPerTile, sizeX / 2, gridWidth * PixelsPerTile - sizeX / 2),
+            Math.Clamp(localY * PixelsPerTile, sizeY / 2, gridHeight * PixelsPerTile - sizeY / 2), sizeX, sizeY);
+    }
+
     public static (double X, double Y)? Project(NearbyPlayerMarkers.Marker marker, LiveFrame? frame,
         MapPlayersFrame? map, double clientWidth, double clientHeight)
     {

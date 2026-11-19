@@ -10,6 +10,8 @@ internal sealed class MapPlayersPlot : Control
     public int? SelectedRowSlot { get; set; }
     public bool SelectedHighlightOn { get; set; }
     public bool HasSelectedRow => SelectedRowSlot is { } slot && Offsets.Any(p => p.Slot == slot);
+    private double _displayRadius = 10;
+    public void ResetScale() { _displayRadius = 10; Offsets = []; Invalidate(); }
     public MapPlayersPlot() { DoubleBuffered = true; Dock = DockStyle.Fill; }
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -23,19 +25,19 @@ internal sealed class MapPlayersPlot : Control
         g.DrawString("+X", Font, Brushes.LightGray, Width - 30, cy + 3);
         g.DrawString("−Y", Font, Brushes.LightGray, cx + 3, 1);
         g.DrawString("+Y", Font, Brushes.LightGray, cx + 3, Height - 18);
-        var scale = Math.Max(1, Offsets.Where(p => double.IsFinite(p.X) && double.IsFinite(p.Y))
-            .Select(p => Math.Max(Math.Abs(p.X), Math.Abs(p.Y))).DefaultIfEmpty(1).Max());
-        var unit = Math.Min((Width - 65) / 2.0, (Height - 35) / 2.0) / scale;
+        // A new nearby player must not re-zoom the whole plot on every census.
+        var needed = Offsets.Where(p => double.IsFinite(p.X) && double.IsFinite(p.Y))
+            .Select(p => Math.Max(Math.Abs(p.X), Math.Abs(p.Y))).DefaultIfEmpty(1).Max();
+        if (needed > _displayRadius) _displayRadius = Math.Pow(2, Math.Ceiling(Math.Log2(needed)));
+        var unit = Math.Min((Width - 65) / 2.0, (Height - 35) / 2.0) / _displayRadius;
         foreach (var p in Offsets.Where(p => double.IsFinite(p.X) && double.IsFinite(p.Y)))
         {
             var x = cx + (float)(p.X * unit); var y = cy + (float)(p.Y * unit);
             var marker = MapPlotMarkers.Classify(p.Slot, p.Targeted, SelectedRowSlot);
             if (marker is MapPlotMarker.TableSelection or MapPlotMarker.Both)
             {
-                // A row marked in this table blinks red, independently of the in-game target.
-                if (SelectedHighlightOn) g.FillEllipse(Brushes.Red, x - 7, y - 7, 14, 14);
-                else g.FillEllipse(Brushes.DarkRed, x - 4, y - 4, 8, 8);
-                using var outline = new Pen(Color.Red, SelectedHighlightOn ? 2 : 1);
+                g.FillEllipse(Brushes.DarkRed, x - 6, y - 6, 12, 12);
+                using var outline = new Pen(Color.Red, 2);
                 g.DrawEllipse(outline, x - 8, y - 8, 16, 16);
                 if (marker == MapPlotMarker.Both) g.FillEllipse(Brushes.Gold, x - 2, y - 2, 4, 4);
             }

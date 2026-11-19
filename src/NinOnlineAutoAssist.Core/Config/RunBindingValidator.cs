@@ -10,7 +10,8 @@ public static class RunBindingValidator
             ["LShift"] = 0xA0, ["RShift"] = 0xA1 };
         if (!bindings.TryGetValue("Run", out var run) || run.Length != 1 || !keys.TryGetValue(run[0], out var key))
             throw new ArgumentException("Run precisa ter um único atalho Ctrl/Shift sem modificadores.");
-        if (key == followKey) throw new ArgumentException("Run e ativação do Follow não podem usar a mesma tecla.");
+        if (key == followKey) throw new ArgumentException(
+            $"Run ({run[0]}) e ativação do Follow usam a mesma tecla; configure outra tecla de ativação do Follow para usar Auto Stamina.");
         var modifier = key is 0xA2 or 0xA3 ? "ControlModifier" : "ShiftModifier";
         var conflicts = bindings.Where(b => b.Key != "Run" && b.Key != modifier && b.Value.Contains(run[0]))
             .Select(b => b.Key).ToArray();
