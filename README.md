@@ -1,16 +1,16 @@
 # Nin Online AutoAssist
 
-## Interface moderna (pré-publicação 1.1.51)
+## Interface moderna (1.2.0)
 
 O painel principal mantém os módulos ON/OFF, a sessão e a conexão; abaixo aparecem seis cartões com os valores atuais e acesso direto à configuração de Auto Turning, Cast Turn, SubPunish, AA/Tool, Follow e Stamina. Os diálogos existentes continuam responsáveis por validar e salvar os ajustes, sempre desarmando as macros antes da edição. A página **Logs** reúne o painel completo de status ao vivo e o histórico de eventos; o mapa permanece em sua própria página. Alterar a organização visual não libera entradas nem muda permissões.
 
 `src/Modern/App` contém a UI v4, login Firebase e verificação obrigatória de GitHub Releases antes do login. `src/Modern/Live` inclui a leitura do mapa completo usada na UI; `src/Modern/Diagnostics` recompila o diagnóstico contra esse leitor. Esses projetos referenciam o Core deste repositório, **sem DLLs de `C:\NinAutoAssist` nem pastas `dist`**. O instalador é compilado por `scripts/Build-Release.ps1` e pelo workflow de tags, que agora apontam para a UI moderna. Os testes antigos também rodam contra o leitor moderno antes de empacotar. Os botões ON de SubPunish e AA/Tool são a autorização explícita de suas funções, sem caixas extras; OFF, F12, desconexão, troca de personagem e perda de permissão desarmam os módulos. O perfil assinado e os demais gates de segurança continuam obrigatórios.
 
-Não publique a 1.1.51 só com um EXE solto: o updater exige instalação Velopack e uma release pública contendo **todos** os assets. Após a publicação, confirme login, permissões, atualização da instalação 1.1.50, preservação de configurações e F12 em um teste real. Sem esse teste manual, a compilação local não prova a operação ponta a ponta. Não coloque configurações Firebase privadas, `characters`, logs nem chaves no Git.
+Não publique a 1.2.0 só com um EXE solto: o updater exige instalação Velopack e uma release pública contendo **todos** os assets. Após a publicação, confirme login, permissões, atualização da instalação 1.1.50, preservação de configurações e F12 em um teste real. Sem esse teste manual, a compilação local não prova a operação ponta a ponta. Não coloque configurações Firebase privadas, `characters`, logs nem chaves no Git.
 
 Auto Stamina exige `HoldToRun=False` no jogo e uma tecla de Run distinta da tecla de ativação do Follow. Se houver colisão, a UI não liga o módulo e registra o motivo; ajuste a tecla do Follow em **AA + Tool / Follow / Stamina**, salve e reconecte. Auto Cast Turn só gira casts iniciados após uma leitura de cast inativo com o módulo ligado; uma leitura inativa durante bloqueio transitório pode armar o próximo cast, mas nunca autoriza giro enquanto o gate está bloqueado nem recupera um cast iniciado durante o bloqueio.
 
-Antes da publicação, `scripts/Build-LoginPreview.ps1 -FirebaseConfigPath CAMINHO` gera uma **prévia local com Firebase obrigatório**, em pasta separada. Somente a prévia compilada com `LoginPreviewBuild=true` dispensa a checagem do updater para permitir teste do login; o instalador/release não contém esse desvio. Nunca publique a prévia. A atualização real de 1.1.50 → 1.1.51 requer teste após a release e não é comprovada pela prévia.
+`scripts/Build-LoginPreview.ps1 -FirebaseConfigPath CAMINHO` gera uma **prévia local com Firebase obrigatório**, em pasta separada. Somente a prévia compilada com `LoginPreviewBuild=true` dispensa a checagem do updater para permitir teste do login; o instalador/release não contém esse desvio. Nunca publique a prévia. A atualização real de 1.1.50 → 1.2.0 requer teste após a release e não é comprovada pela prévia.
 
 Aplicativo Windows em C#/.NET 8 com autenticação Firebase, permissões individuais e atualização automática via Velopack.
 
