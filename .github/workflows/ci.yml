@@ -15,3 +15,5 @@ jobs:
           dotnet-version: '8.0.x'
       - run: dotnet test NinOnlineAutoAssist.sln -c Release
       - run: dotnet build NinOnlineAutoAssist.sln -c Release --no-restore
+      - run: dotnet test tests/Modern.Tests/Modern.Tests.csproj -c Release
+      - run: dotnet build src/Modern/App/NinOnlineAutoAssist.App.csproj -c Release

@@ -25,15 +25,19 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao restaurar o CLI Velopack. Confira os runtimes exigidos por vpk.' }
     & dotnet test NinOnlineAutoAssist.sln -c Release --artifacts-path $BuildArtifactsDirectory
     if ($LASTEXITCODE -ne 0) { throw 'Testes falharam; nenhuma release será empacotada.' }
-    & dotnet publish src/NinOnlineAutoAssist.App/NinOnlineAutoAssist.App.csproj -c Release -r win-x64 --self-contained true --artifacts-path $BuildArtifactsDirectory '-p:LocalArchiveBuild=false' '-p:PublishSingleFile=false' '-p:PublishTrimmed=false' "-p:Version=$Version" "-p:UpdateRepositoryUrl=$($RepositoryUrl.TrimEnd('/'))" -o $publish
+    $modernArtifacts = Join-Path $BuildArtifactsDirectory 'modern'
+    & dotnet test tests/Modern.Tests/Modern.Tests.csproj -c Release --artifacts-path $modernArtifacts
+    if ($LASTEXITCODE -ne 0) { throw 'Testes da UI v4 e do leitor moderno falharam.' }
+    & dotnet publish src/Modern/App/NinOnlineAutoAssist.App.csproj -c Release -r win-x64 --self-contained true --artifacts-path $modernArtifacts '-p:PublishSingleFile=false' '-p:PublishTrimmed=false' "-p:Version=$Version" "-p:UpdateRepositoryUrl=$($RepositoryUrl.TrimEnd('/'))" -o $publish
     if ($LASTEXITCODE -ne 0) { throw 'Falha na publicação.' }
     # Only public client fields; never copy unknown properties or credentials into an installer.
     @{ ProjectId=$config.ProjectId; ApiKey=$config.ApiKey; DatabaseId=$(if ($config.DatabaseId) { $config.DatabaseId } else { '(default)' }) } |
         ConvertTo-Json | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $publish 'firebase.config.json')
     @{ RepositoryUrl=$RepositoryUrl.TrimEnd('/') } | ConvertTo-Json | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $publish 'updates.config.json')
+    Copy-Item (Join-Path $root 'ninautoassist.config.example.json') (Join-Path $publish 'ninautoassist.config.json')
     $defaults = Get-Content -Raw -LiteralPath (Join-Path $publish 'ninautoassist.config.json') | ConvertFrom-Json
     if ($defaults.Live.CharacterName) { throw 'Pacote contém configuração pessoal de personagem; distribuição bloqueada.' }
-    & dotnet tool run vpk -- pack --packId NinOnlineAutoAssist --packVersion $Version --packDir $publish --mainExe NinOnlineAutoAssist.App.exe --packTitle 'Nin Online AutoAssist' --icon (Join-Path $root 'src/NinOnlineAutoAssist.App/Assets/app-icon.ico') --runtime win-x64 --noPortable --outputDir $releases
+    & dotnet tool run vpk -- pack --packId NinOnlineAutoAssist --packVersion $Version --packDir $publish --mainExe NinOnlineAutoAssist.App.exe --packTitle 'Nin AutoAssist' --icon (Join-Path $root 'src/Modern/App/app.ico') --runtime win-x64 --noPortable --outputDir $releases
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao empacotar Velopack.' }
     Write-Output "Releases prontas em: $releases"
     Write-Output 'Publique todos os assets gerados da versão estável. Não publique apenas o Setup.exe.'

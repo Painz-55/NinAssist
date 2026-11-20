@@ -1,5 +1,11 @@
 # Nin Online AutoAssist
 
+## Interface moderna (pré-publicação 1.1.51)
+
+`src/Modern/App` contém a UI v4, login Firebase e verificação obrigatória de GitHub Releases antes do login. `src/Modern/Live` inclui a leitura do mapa completo usada na UI; `src/Modern/Diagnostics` recompila o diagnóstico contra esse leitor. Esses projetos referenciam o Core deste repositório, **sem DLLs de `C:\NinAutoAssist` nem pastas `dist`**. O instalador é compilado por `scripts/Build-Release.ps1` e pelo workflow de tags, que agora apontam para a UI moderna. Os testes antigos e os mesmos 737 testes contra o leitor moderno rodam antes de empacotar. A autorização de combo heurístico e AA/Tool volta a exigir caixas visíveis desmarcadas no início, após F12 e na troca de personagem.
+
+Não publique a 1.1.51 só com um EXE solto: o updater exige instalação Velopack e uma release pública contendo **todos** os assets. Após a publicação, confirme login, permissões, atualização da instalação 1.1.50, preservação de configurações e F12 em um teste real. Sem esse teste manual, a compilação local não prova a operação ponta a ponta. Não coloque configurações Firebase privadas, `characters`, logs nem chaves no Git.
+
 Aplicativo Windows em C#/.NET 8 com autenticação Firebase, permissões individuais e atualização automática via Velopack.
 
 ## Compilar e testar

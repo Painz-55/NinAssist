@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Velopack" Version="1.2.161" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <Using Include="Xunit" />
+    <Compile Include="..\NinOnlineAutoAssist.Tests\*.cs" Link="Original\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\Modern\App\VelopackUpdateBackend.cs" Link="Updates\VelopackUpdateBackend.cs" />
+    <Content Include="..\..\compatibility\profiles.json" Link="compatibility\profiles.json" CopyToOutputDirectory="Always" />
+    <Content Include="..\..\compatibility\profiles.json.sig" Link="compatibility\profiles.json.sig" CopyToOutputDirectory="Always" />
+    <Content Include="..\..\compatibility\package-profiles.json" Link="compatibility\package-profiles.json" CopyToOutputDirectory="Always" />
+    <Content Include="..\..\compatibility\package-profiles.json.sig" Link="compatibility\package-profiles.json.sig" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NinOnlineAutoAssist.Core\NinOnlineAutoAssist.Core.csproj" />
+    <ProjectReference Include="..\..\src\NinOnlineAutoAssist.Simulation\NinOnlineAutoAssist.Simulation.csproj" />
+    <ProjectReference Include="..\..\src\Modern\Diagnostics\ModernDiagnostics.csproj" />
+    <ProjectReference Include="..\..\src\Modern\Live\ModernLive.csproj" />
+  </ItemGroup>
+</Project>
