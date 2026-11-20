@@ -14,6 +14,7 @@
     <Using Include="Xunit" />
     <Compile Include="..\NinOnlineAutoAssist.Tests\*.cs" Link="Original\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\Modern\App\VelopackUpdateBackend.cs" Link="Updates\VelopackUpdateBackend.cs" />
+    <Compile Include="..\..\src\Modern\App\MacroAuthorization.cs" Link="Authorization\MacroAuthorization.cs" />
     <Content Include="..\..\compatibility\profiles.json" Link="compatibility\profiles.json" CopyToOutputDirectory="Always" />
     <Content Include="..\..\compatibility\profiles.json.sig" Link="compatibility\profiles.json.sig" CopyToOutputDirectory="Always" />
     <Content Include="..\..\compatibility\package-profiles.json" Link="compatibility\package-profiles.json" CopyToOutputDirectory="Always" />

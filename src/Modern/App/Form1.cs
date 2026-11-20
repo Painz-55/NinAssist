@@ -105,10 +105,6 @@ public sealed class Form1 : Form
 
 	private CheckBox _autoCharacter;
 
-	private CheckBox _allowSequence;
-
-	private CheckBox _allowCombat;
-
 	private RichTextBox _rtbLog;
 
 	private DataGridView _playersGrid;
@@ -313,7 +309,6 @@ public sealed class Form1 : Form
 			bool flag = !(tag is bool) || !(bool)tag;
 			_btnCombat.Tag = flag;
 			_ctx?.SetCombatEnabled(flag);
-			_ctx?.SetCombatAuthorized(_allowCombat.Checked);
 			RefreshModuleButtons();
 		};
 		_btnFollow = MakeModuleButton("AUTO FOLLOW", on: false);
@@ -416,8 +411,8 @@ public sealed class Form1 : Form
 		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 26f));
 		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 34f));
 		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 40f));
-		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
-		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
+		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 0f));
+		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 0f));
 		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 64f));
 		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 		_autoCharacter = new CheckBox
@@ -492,14 +487,6 @@ public sealed class Form1 : Form
 		flowLayoutPanel.AutoScroll = true;
 		flowLayoutPanel.Controls.AddRange(new Control[4] { button3, button4, button5, _account });
 		tableLayoutPanel6.Controls.Add(flowLayoutPanel, 0, 2);
-		_allowSequence = new CheckBox { Text = "AUTORIZAR A → Q → S (combo heurístico)", Dock = DockStyle.Fill,
-			ForeColor = Warn, Checked = false };
-		_allowSequence.CheckedChanged += delegate { _ctx?.SetCounterAttackAuthorized(_allowSequence.Checked); RefreshStatus(); };
-		_allowCombat = new CheckBox { Text = "AUTORIZAR AA + TOOL automáticos", Dock = DockStyle.Fill,
-			ForeColor = Warn, Checked = false };
-		_allowCombat.CheckedChanged += delegate { _ctx?.SetCombatAuthorized(_allowCombat.Checked); RefreshStatus(); };
-		tableLayoutPanel6.Controls.Add(_allowSequence, 0, 3);
-		tableLayoutPanel6.Controls.Add(_allowCombat, 0, 4);
 		tableLayoutPanel6.Controls.Add(new Label
 		{
 			Text = "SUB: sem giro durante buff; giro preparatório antes das teclas do combo HEURÍSTICO.\nAA: Melee radial ou Fan reto com largura própria e giro antes do AA; Hisuy indisponível.\nFOLLOW: ON + tecla segurada + caminho conhecido. F12 desliga tudo.\nFeche o chat; acertos/cooldowns/armadilhas invisíveis não são garantidos.",
@@ -1187,8 +1174,6 @@ public sealed class Form1 : Form
 		AppPaths.Settings.EnsureConfig();
 		_config = ConfigLoader.Load(ConfigPath);
 		_txtCharacter.Text = (_autoCharacter.Checked ? "" : _config.Live.CharacterName);
-		_allowSequence.Checked = false;
-		_allowCombat.Checked = false;
 		AppendLog(LogLevel.Info, "AO VIVO: módulos OFF. SubPunish somente Tai/Água; Sub normal cria decoy e não dispara combo. Remoção antecipada é HEURÍSTICA.", null);
 		RefreshModuleButtons();
 		RefreshModeBadge();
@@ -1225,8 +1210,6 @@ public sealed class Form1 : Form
 		_btnFollow.Enabled = flag && Allowed(AppFeature.Follow) && Approved(LiveInputKind.Follow);
 		_btnStamina.Enabled = flag && Allowed(AppFeature.Stamina) && Approved(LiveInputKind.Stamina);
 		_btnCastTurn.Enabled = flag && Allowed(AppFeature.AutoCastTurn) && Approved(LiveInputKind.CastTurning) && (object)profile?.CastTiming != null;
-		_allowSequence.Enabled = _btnSubPunish.Enabled && profile?.PunishComboValidated != false;
-		_allowCombat.Enabled = _btnCombat.Enabled;
 		_inspectionButton.Enabled = Allowed(AppFeature.ResourceInspection);
 		_account.Text = _session.Email + " · " + _session.Status;
 		bool Approved(LiveInputKind kind)
@@ -1257,7 +1240,6 @@ public sealed class Form1 : Form
 			_ctx.SetAutoTurningEnabled(enabled: false);
 			_ctx.SetSubPunishEnabled(enabled: false);
 			_ctx.SetCombatEnabled(enabled: false);
-			_ctx.SetCombatAuthorized(authorized: false);
 			_ctx.SetFollowEnabled(enabled: false);
 			_ctx.SetStaminaEnabled(enabled: false);
 			_ctx.SetCastTurnEnabled(enabled: false);
@@ -1296,12 +1278,10 @@ public sealed class Form1 : Form
 			Live = _config.Live with
 			{
 				CharacterName = (_autoCharacter.Checked ? _config.Live.CharacterName : _txtCharacter.Text.Trim()),
-				AllowCounterAttackSequence = _allowSequence.Checked
+				AllowCounterAttackSequence = false
 			}
 		};
 		_ctx = new LiveContext(_config, _session.Access, _autoCharacter.Checked);
-		_ctx.SetCounterAttackAuthorized(_allowSequence.Checked);
-		_ctx.SetCombatAuthorized(_allowCombat.Checked);
 		_ctx.MemoryLog.EntryLogged += OnLogEntry;
 		foreach (LogEntry item in _ctx.MemoryLog.Snapshot())
 		{
@@ -1347,7 +1327,7 @@ public sealed class Form1 : Form
 				CombatAssist = combatAssistForm.Settings,
 				Live = _config.Live with
 				{
-					AllowCounterAttackSequence = _allowSequence.Checked
+					AllowCounterAttackSequence = false
 				}
 			};
 			try
@@ -1469,7 +1449,6 @@ public sealed class Form1 : Form
 		_ctx?.SetAutoTurningEnabled(enabled: false);
 		_ctx?.SetSubPunishEnabled(enabled: false);
 		_ctx?.SetCombatEnabled(enabled: false);
-		_ctx?.SetCombatAuthorized(authorized: false);
 		_ctx?.SetFollowEnabled(enabled: false);
 		_ctx?.SetStaminaEnabled(enabled: false);
 		_ctx?.SetCastTurnEnabled(enabled: false);
@@ -1481,8 +1460,6 @@ public sealed class Form1 : Form
 		object tag = (btnFollow.Tag = obj);
 		btnCombat.Tag = tag;
 		_btnCastTurn.Tag = false;
-		_allowSequence.Checked = false;
-		_allowCombat.Checked = false;
 		LiveInputController.AcknowledgeEmergencyAfterDisarm();
 		RefreshModuleButtons();
 		AppendLog(LogLevel.Warning, "PARADA DE EMERGÊNCIA acionada — módulos desativados", EventOrigin.Requested);
@@ -1561,8 +1538,6 @@ public sealed class Form1 : Form
 							AllowCounterAttackSequence = false
 						}
 					};
-					_allowSequence.Checked = false;
-					_allowCombat.Checked = false;
 					AppendLog(LogLevel.Info, "Configurações de " + liveFrame.PlayerName + " carregadas; módulos OFF.", null);
 					ConnectToGame();
 					return;

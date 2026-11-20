@@ -321,7 +321,7 @@ public sealed class LiveContext : IDisposable
 			autoAssistLogger = memoryLog;
 		}
 		Log = autoAssistLogger;
-		_authorized = config.Live.AllowCounterAttackSequence;
+		_authorized = false; // Only the current session's SubPunish ON button can authorize a combo.
 		try
 		{
 			Process[] processesByName = Process.GetProcessesByName("NinOnline");
@@ -544,26 +544,6 @@ public sealed class LiveContext : IDisposable
 		}
 	}
 
-	public void SetCounterAttackAuthorized(bool authorized)
-	{
-		authorized &= _access.Allows(SubFeature) && PunishComboApproved;
-		if (!authorized)
-		{
-			_authorized = false;
-		}
-		lock (_automationLock)
-		{
-			if (_disposed)
-			{
-				return;
-			}
-			ResetPunish();
-			_authorized = authorized;
-			Log.Log(LogLevel.Info, $"Combo {string.Join(" → ", Config.Live.PunishKeys)} + giro preparatório {(authorized ? "AUTORIZADOS — heurística" : "DESAUTORIZADOS")}; fluxo anterior cancelado", EventOrigin.Requested);
-		}
-		_automation?.Wake();
-	}
-
 	public void SetAutoTurningEnabled(bool enabled)
 	{
 		enabled &= _access.Allows(AppFeature.AutoTurning);
@@ -598,6 +578,7 @@ public sealed class LiveContext : IDisposable
 		if (!enabled)
 		{
 			_subEnabled = false;
+			_authorized = false;
 		}
 		lock (_automationLock)
 		{
@@ -606,6 +587,7 @@ public sealed class LiveContext : IDisposable
 				return;
 			}
 			_subEnabled = enabled;
+			_authorized = MacroAuthorization.SubPunish(enabled, _access.Allows(SubFeature), PunishComboApproved);
 			ResetPunish();
 			Log.Log(LogLevel.Info, "Live Punish " + (enabled ? "ON" : "OFF") + "; F manual; remoção antecipada HEURÍSTICA; combo " + (CounterAttackAuthorized ? "authorized" : "DISABLED"), EventOrigin.Requested);
 		}
@@ -614,31 +596,10 @@ public sealed class LiveContext : IDisposable
 
 	public void SetCombatEnabled(bool enabled)
 	{
-		enabled &= _access.Allows(AppFeature.AutoAttack) || _access.Allows(AppFeature.Tool);
+		enabled = MacroAuthorization.Combat(enabled, _access.Allows(AppFeature.AutoAttack), _access.Allows(AppFeature.Tool));
 		if (!enabled)
 		{
 			_combatEnabled = false;
-		}
-		lock (_automationLock)
-		{
-			if (_disposed)
-			{
-				return;
-			}
-			Combat?.Reset();
-			_fanTurnAt = null;
-			_fanTurnTarget = null;
-			_combatEnabled = enabled;
-			Log.Log(LogLevel.Info, "AA/Tool " + (enabled ? "ON" : "OFF") + "; automático com autorização, alcances/intervalos configurados", EventOrigin.Requested);
-		}
-		_automation?.Wake();
-	}
-
-	public void SetCombatAuthorized(bool authorized)
-	{
-		authorized &= _access.Allows(AppFeature.AutoAttack) || _access.Allows(AppFeature.Tool);
-		if (!authorized)
-		{
 			_combatAuthorized = false;
 		}
 		lock (_automationLock)
@@ -650,8 +611,9 @@ public sealed class LiveContext : IDisposable
 			Combat?.Reset();
 			_fanTurnAt = null;
 			_fanTurnTarget = null;
-			_combatAuthorized = authorized;
-			Log.Log(LogLevel.Info, "AA/Tool " + (authorized ? "AUTORIZADO" : "DESAUTORIZADO"), EventOrigin.Requested);
+			_combatEnabled = enabled;
+			_combatAuthorized = enabled;
+			Log.Log(LogLevel.Info, "AA/Tool " + (enabled ? "ON" : "OFF") + "; automático com autorização, alcances/intervalos configurados", EventOrigin.Requested);
 		}
 		_automation?.Wake();
 	}
