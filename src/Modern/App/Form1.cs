@@ -325,6 +325,11 @@ public sealed class Form1 : Form
 		{
 			object tag = _btnStamina.Tag;
 			bool flag = !(tag is bool) || !(bool)tag;
+			if (flag && _ctx?.StaminaBindingValid != true)
+			{
+				AppendLog(LogLevel.Warning, "Auto Stamina não pode ser ligado: " + (_ctx?.StaminaBindingProblem ?? "desconectado") + ". Ajuste a tecla de ativação do Follow nas configurações e reconecte.", EventOrigin.Requested);
+				return;
+			}
 			_btnStamina.Tag = flag;
 			_ctx?.SetStaminaEnabled(flag);
 			RefreshModuleButtons();

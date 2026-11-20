@@ -244,6 +244,10 @@ public sealed class LiveContext : IDisposable
 
 	public string StaminaStatus { get; private set; } = "Auto Stamina OFF";
 
+	public bool StaminaBindingValid => _input?.StaminaBindingValid == true;
+
+	public string StaminaBindingProblem => _input?.StaminaBindingProblem ?? "Corrida não validada";
+
 	private bool SubNeedsPriority
 	{
 		get
@@ -1244,7 +1248,7 @@ public sealed class LiveContext : IDisposable
 		IL_04f2:
 		_subReadBurst = flag;
 		SafetyDecision safetyDecision3 = CheckSafety(LiveInputKind.CastTurning);
-		CastTurn?.Update(frame, safetyDecision3.Allowed, SubNeedsPriority);
+		CastTurn?.Update(frame, safetyDecision3.Allowed, SubNeedsPriority, _castTurnEnabled);
 		CastTurnStatus = ((!safetyDecision3.Allowed) ? safetyDecision3.Reason : (CastTurn?.Status ?? "Indisponível"));
 		if (_castTurnEnabled && (object)frame != null && frame.Cast?.Active == true)
 		{

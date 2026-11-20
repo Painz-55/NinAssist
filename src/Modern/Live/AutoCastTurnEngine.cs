@@ -175,13 +175,23 @@ public sealed class AutoCastTurnEngine
 		return false;
 	}
 
-	public void Update(LiveFrame? frame, bool allowed, bool higherPriorityBusy)
+	public void Update(LiveFrame? frame, bool allowed, bool higherPriorityBusy, bool enabledWhileBlocked = false)
 	{
 		long nowMs = _clock.NowMs;
 		InFinalWindow = false;
 		if (!allowed)
 		{
 			Reset();
+			// An already-enabled module may observe a verified idle cast while a transient
+			// safety gate is closed. It still cannot dispatch until every gate passes.
+			if (enabledWhileBlocked && Fresh(frame, nowMs) && frame.Snapshot.Player.IsAlive &&
+				!string.IsNullOrEmpty(frame.Snapshot.Player.Id) && frame.Cast is { Valid: true, Active: false } idle &&
+				TimingValid(frame, idle, nowMs))
+			{
+				_contextPlayer = frame.Snapshot.Player.Id;
+				_contextMap = frame.Map;
+				_sawIdle = true;
+			}
 			Status = "Auto Cast Turn bloqueado/OFF";
 			return;
 		}

@@ -88,7 +88,7 @@ internal sealed class CombatAssistForm : Form
 		{
 			AutoSize = true,
 			MaximumSize = new Size(590, 0),
-			Text = "Follow mantém UMA OU DUAS SETAS pressionadas (diagonais), sem cortar quinas bloqueadas. Para sem caminho/perigos conhecidos; não detecta traps invisíveis. Soltar a tecla ou F12 libera ambas.\nAuto Stamina usa os percentuais acima e mantém a decisão entre eles; o limite para religar deve ser maior.\nSalvar desarma todos os módulos; não altera bindings do jogo."
+			Text = "Follow mantém UMA OU DUAS SETAS pressionadas (diagonais), sem cortar quinas bloqueadas. Para sem caminho/perigos conhecidos; não detecta traps invisíveis. Soltar a tecla ou F12 libera ambas.\nA tecla do Follow NÃO pode ser a mesma do Run no jogo. Auto Stamina exige HoldToRun=False e mantém a decisão entre os limites; o limite para religar deve ser maior.\nSalvar desarma todos os módulos; não altera bindings do jogo."
 		});
 		Button button = new Button
 		{
