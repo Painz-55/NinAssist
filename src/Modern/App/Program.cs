@@ -38,6 +38,10 @@ internal static class Program
         try
         {
             AppPaths.Settings.EnsureConfig();
+#if LOGIN_PREVIEW
+            // Separate authenticated preview, compiled explicitly; the release build has no skip path.
+            string updateStatus = "PRÉVIA LOCAL COM LOGIN — atualizador desativado nesta cópia de teste.";
+#else
             var repository = new AutomaticUpdateConfig
             {
                 RepositoryUrl = Assembly.GetExecutingAssembly().GetCustomAttributes<AssemblyMetadataAttribute>()
@@ -48,6 +52,8 @@ internal static class Program
             if (updater.Result.Outcome == StartupUpdateOutcome.Blocked)
                 MessageBox.Show(updater.Result.Message, "Atualização obrigatória", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             if (updater.Result.Outcome != StartupUpdateOutcome.Continue) return;
+            string updateStatus = updater.Result.Message;
+#endif
 
             var path = Path.Combine(AppContext.BaseDirectory, "firebase.config.json");
             var config = JsonSerializer.Deserialize<FirebaseConfig>(File.ReadAllText(path))
@@ -57,7 +63,7 @@ internal static class Program
             var client = new FirebaseClient(http, config);
             while (true)
             {
-                using var login = new LoginForm(client, updater.Result.Message);
+                using var login = new LoginForm(client, updateStatus);
                 if (login.ShowDialog() != DialogResult.OK || login.Session is not { } session) return;
                 try
                 {

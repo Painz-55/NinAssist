@@ -6,6 +6,8 @@
 
 Não publique a 1.1.51 só com um EXE solto: o updater exige instalação Velopack e uma release pública contendo **todos** os assets. Após a publicação, confirme login, permissões, atualização da instalação 1.1.50, preservação de configurações e F12 em um teste real. Sem esse teste manual, a compilação local não prova a operação ponta a ponta. Não coloque configurações Firebase privadas, `characters`, logs nem chaves no Git.
 
+Antes da publicação, `scripts/Build-LoginPreview.ps1 -FirebaseConfigPath CAMINHO` gera uma **prévia local com Firebase obrigatório**, em pasta separada. Somente a prévia compilada com `LoginPreviewBuild=true` dispensa a checagem do updater para permitir teste do login; o instalador/release não contém esse desvio. Nunca publique a prévia. A atualização real de 1.1.50 → 1.1.51 requer teste após a release e não é comprovada pela prévia.
+
 Aplicativo Windows em C#/.NET 8 com autenticação Firebase, permissões individuais e atualização automática via Velopack.
 
 ## Compilar e testar

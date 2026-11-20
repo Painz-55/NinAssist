@@ -9,6 +9,7 @@
     <Nullable>annotations</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationIcon>app.ico</ApplicationIcon>
+    <DefineConstants Condition="'$(LoginPreviewBuild)' == 'true'">$(DefineConstants);LOGIN_PREVIEW</DefineConstants>
     <UpdateRepositoryUrl Condition="'$(UpdateRepositoryUrl)' == ''">https://github.com/Painz-55/NinAssist</UpdateRepositoryUrl>
   </PropertyGroup>
   <ItemGroup>

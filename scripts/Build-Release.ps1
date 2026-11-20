@@ -28,7 +28,7 @@ try {
     $modernArtifacts = Join-Path $BuildArtifactsDirectory 'modern'
     & dotnet test tests/Modern.Tests/Modern.Tests.csproj -c Release --artifacts-path $modernArtifacts
     if ($LASTEXITCODE -ne 0) { throw 'Testes da UI v4 e do leitor moderno falharam.' }
-    & dotnet publish src/Modern/App/NinOnlineAutoAssist.App.csproj -c Release -r win-x64 --self-contained true --artifacts-path $modernArtifacts '-p:PublishSingleFile=false' '-p:PublishTrimmed=false' "-p:Version=$Version" "-p:UpdateRepositoryUrl=$($RepositoryUrl.TrimEnd('/'))" -o $publish
+    & dotnet publish src/Modern/App/NinOnlineAutoAssist.App.csproj -c Release -r win-x64 --self-contained true --artifacts-path $modernArtifacts '-p:LoginPreviewBuild=false' '-p:PublishSingleFile=false' '-p:PublishTrimmed=false' "-p:Version=$Version" "-p:UpdateRepositoryUrl=$($RepositoryUrl.TrimEnd('/'))" -o $publish
     if ($LASTEXITCODE -ne 0) { throw 'Falha na publicação.' }
     # Only public client fields; never copy unknown properties or credentials into an installer.
     @{ ProjectId=$config.ProjectId; ApiKey=$config.ApiKey; DatabaseId=$(if ($config.DatabaseId) { $config.DatabaseId } else { '(default)' }) } |
