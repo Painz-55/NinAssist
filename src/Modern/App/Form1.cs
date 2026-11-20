@@ -137,6 +137,8 @@ public sealed class Form1 : Form
 
 	private Label _lblCastTurn;
 
+	private readonly List<(Label Label, Func<string> Summary)> _settingsSummaries = new();
+
 	private string? _loadedCharacter;
 
 	public bool ReturnToLogin { get; private set; }
@@ -375,11 +377,13 @@ public sealed class Form1 : Form
 		TableLayoutPanel tableLayoutPanel4 = new TableLayoutPanel
 		{
 			Dock = DockStyle.Fill,
-			ColumnCount = 2,
+			ColumnCount = 1,
+			RowCount = 2,
 			BackColor = Bg
 		};
-		tableLayoutPanel4.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58f));
-		tableLayoutPanel4.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42f));
+		tableLayoutPanel4.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+		tableLayoutPanel4.RowStyles.Add(new RowStyle(SizeType.Absolute, 190f));
+		tableLayoutPanel4.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 		tableLayoutPanel.Controls.Add(tableLayoutPanel4, 0, 2);
 		TableLayoutPanel tableLayoutPanel5 = new TableLayoutPanel
 		{
@@ -403,22 +407,20 @@ public sealed class Form1 : Form
 		_lblFollow = AddStatusRow(tableLayoutPanel5, 9, "FOLLOW — TECLA SEGURADA");
 		_lblStamina = AddStatusRow(tableLayoutPanel5, 10, "STAMINA — LIMITES CONFIGURÁVEIS");
 		_lblCastTurn = AddStatusRow(tableLayoutPanel5, 11, "AUTO CAST TURN — FINAL DO CAST");
-		tableLayoutPanel4.Controls.Add(tableLayoutPanel5, 0, 0);
+		tableLayoutPanel5.RowCount = 12;
+		tableLayoutPanel5.Height = 480;
 		TableLayoutPanel tableLayoutPanel6 = new TableLayoutPanel
 		{
 			Dock = DockStyle.Fill,
 			ColumnCount = 1,
-			RowCount = 7,
+			RowCount = 4,
 			BackColor = Panel,
 			Padding = new Padding(18, 14, 18, 14),
-			Margin = new Padding(6, 0, 0, 0)
+			Margin = new Padding(0, 0, 0, 8)
 		};
 		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 26f));
 		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 34f));
 		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 40f));
-		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 0f));
-		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 0f));
-		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 64f));
 		tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 		_autoCharacter = new CheckBox
 		{
@@ -497,50 +499,9 @@ public sealed class Form1 : Form
 			Text = "SUB: sem giro durante buff; giro preparatório antes das teclas do combo HEURÍSTICO.\nAA: Melee radial ou Fan reto com largura própria e giro antes do AA; Hisuy indisponível.\nFOLLOW: ON + tecla segurada + caminho conhecido. F12 desliga tudo.\nFeche o chat; acertos/cooldowns/armadilhas invisíveis não são garantidos.",
 			Dock = DockStyle.Fill,
 			ForeColor = Dim
-		}, 0, 5);
-		Button button6 = new Button
-		{
-			Text = "TECLAS / TIMERS SUB",
-			Width = 210,
-			Height = 32,
-			BackColor = PanelAlt,
-			ForeColor = Fg
-		};
-		button6.Click += delegate
-		{
-			ConfigureKeys();
-		};
-		Button button7 = new Button
-		{
-			Text = "AA / TOOL / FOLLOW / STAMINA",
-			Width = 240,
-			Height = 32,
-			BackColor = PanelAlt,
-			ForeColor = Fg
-		};
-		button7.Click += delegate
-		{
-			ConfigureCombat();
-		};
-		Button button8 = new Button
-		{
-			Text = "EXCLUIR JUTSUS CAST TURN",
-			Width = 210,
-			Height = 32,
-			BackColor = PanelAlt,
-			ForeColor = Fg
-		};
-		button8.Click += delegate
-		{
-			ConfigureCastTurn();
-		};
-		FlowLayoutPanel flowLayoutPanel2 = new FlowLayoutPanel
-		{
-			Dock = DockStyle.Fill
-		};
-		flowLayoutPanel2.Controls.AddRange(new Control[3] { button6, button7, button8 });
-		tableLayoutPanel6.Controls.Add(flowLayoutPanel2, 0, 6);
-		tableLayoutPanel4.Controls.Add(tableLayoutPanel6, 1, 0);
+		}, 0, 3);
+		tableLayoutPanel4.Controls.Add(tableLayoutPanel6, 0, 0);
+		tableLayoutPanel4.Controls.Add(BuildFeatureSettings(), 0, 1);
 		_rtbLog = new RichTextBox
 		{
 			Dock = DockStyle.Fill,
@@ -731,10 +692,69 @@ public sealed class Form1 : Form
 		tabControl.TabPages.Add(tabPage);
 		tabControl.TabPages.Add(tabPage2);
 		tableLayoutPanel.Controls.Add(tabControl, 0, 3);
-		InstallModernShell(tableLayoutPanel, tableLayoutPanel2, tableLayoutPanel3, tableLayoutPanel4, tabControl, tabPage, tabPage2);
+		InstallModernShell(tableLayoutPanel, tableLayoutPanel2, tableLayoutPanel3, tableLayoutPanel4, tableLayoutPanel5, tabControl, tabPage, tabPage2);
+	}
+
+	private Control BuildFeatureSettings()
+	{
+		var grid = new TableLayoutPanel
+		{
+			Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2,
+			BackColor = Bg, Margin = Padding.Empty, AutoScroll = true
+		};
+		for (int i = 0; i < 3; i++) grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.3333f));
+		for (int i = 0; i < 2; i++) grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
+		AddCard(0, 0, "AUTO TURNING", () => $"Ativação: {string.Join(" / ", _config.Live.TurnActivationKeys)}\nTeclas e tempos de giro", ConfigureKeys);
+		AddCard(1, 0, "AUTO CAST TURN", () => $"Janela: {_config.AutoCastTurn.LeadTimeMs} ms\nJutsus excluídos: {_config.AutoCastTurn.ExcludedSpellIds.Length}", ConfigureCastTurn);
+		AddCard(2, 0, "SUBPUNISH", () => $"Combo: {string.Join(" → ", _config.Live.PunishKeys)}\nModo: {_config.Live.PunishMode}", ConfigureKeys);
+		AddCard(0, 1, "AA + TOOL", () => $"AA: {_config.CombatAssist.AttackMode} · {_config.CombatAssist.AttackKey}\nTool: {_config.CombatAssist.ToolKey} · {_config.CombatAssist.ToolRange:0.#} tiles", ConfigureCombat);
+		AddCard(1, 1, "AUTO FOLLOW", () => $"Segurar: {_config.CombatAssist.FollowHoldKey}\nParar: {_config.CombatAssist.FollowStopDistance:0.#} tiles", ConfigureCombat);
+		AddCard(2, 1, "AUTO STAMINA", () => $"Desligar <{_config.CombatAssist.StaminaDisableBelowPercent}% · religar >{_config.CombatAssist.StaminaEnableAbovePercent}%\nRun: {(_ctx?.StaminaBindingValid == true ? "validado" : "verifique tecla / modo")}", ConfigureCombat);
+		return grid;
+
+		void AddCard(int column, int row, string title, Func<string> summary, Action configure)
+		{
+			var card = new TableLayoutPanel
+			{
+				Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3,
+				BackColor = Panel, Padding = new Padding(14, 10, 14, 10), Margin = new Padding(0, 0, 10, 10)
+			};
+			card.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f));
+			card.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+			card.RowStyles.Add(new RowStyle(SizeType.Absolute, 34f));
+			card.Controls.Add(new Label
+			{
+				Text = title, Dock = DockStyle.Fill, ForeColor = Accent,
+				Font = new Font("Segoe UI Semibold", 10f, FontStyle.Bold)
+			}, 0, 0);
+			var detail = new Label
+			{
+				Dock = DockStyle.Fill, ForeColor = Fg,
+				Font = new Font("Segoe UI", 9f), AutoEllipsis = true
+			};
+			_settingsSummaries.Add((detail, summary));
+			card.Controls.Add(detail, 0, 1);
+			var edit = new Button
+			{
+				Text = "CONFIGURAR  ›", Dock = DockStyle.Fill,
+				BackColor = PanelAlt, ForeColor = Fg, FlatStyle = FlatStyle.Flat,
+				Cursor = Cursors.Hand
+			};
+			edit.FlatAppearance.BorderSize = 0;
+			edit.Click += (_, _) => configure();
+			card.Controls.Add(edit, 0, 2);
+			grid.Controls.Add(card, column, row);
+		}
+	}
+
+	private void RefreshSettingsSummaries()
+	{
+		if (_config == null) return;
+		foreach (var (label, summary) in _settingsSummaries) label.Text = summary();
 	}
 
 	private void InstallModernShell(TableLayoutPanel legacyRoot, Control header, Control modules, Control dashboard,
+		TableLayoutPanel statusCard,
 		TabControl legacyTabs, TabPage mapPage, TabPage logPage)
 	{
 		legacyTabs.TabPages.Remove(mapPage);
@@ -789,7 +809,7 @@ public sealed class Form1 : Form
 		{
 			Dock = DockStyle.Bottom,
 			Height = 66,
-			Text = "BUILD LOCAL  1.1.50\nF12 · parada de emergência",
+			Text = $"VERSÃO {Application.ProductVersion.Split('+')[0]}\nF12 · parada de emergência",
 			ForeColor = Dim,
 			Font = new Font("Segoe UI", 8.5f),
 			TextAlign = ContentAlignment.MiddleLeft
@@ -815,13 +835,25 @@ public sealed class Form1 : Form
 			mapPage.Controls.Remove(child);
 			mapSurface.Controls.Add(child);
 		}
-		var logSurface = new Panel { Dock = DockStyle.Fill, BackColor = Panel, Padding = new Padding(12) };
+		var logSurface = new Panel { Dock = DockStyle.Fill, BackColor = Bg, Padding = new Padding(0, 8, 0, 0) };
 		while (logPage.Controls.Count > 0)
 		{
 			Control child = logPage.Controls[0];
 			logPage.Controls.Remove(child);
 			logSurface.Controls.Add(child);
 		}
+		logSurface.Controls.Remove(_rtbLog);
+		var logLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Bg };
+		logLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 62f));
+		logLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 38f));
+		var statusScroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Panel, Margin = new Padding(0, 0, 0, 8) };
+		statusCard.Dock = DockStyle.Top;
+		statusCard.Margin = Padding.Empty;
+		statusScroll.Controls.Add(statusCard);
+		logLayout.Controls.Add(statusScroll, 0, 0);
+		_rtbLog.Margin = Padding.Empty;
+		logLayout.Controls.Add(_rtbLog, 0, 1);
+		logSurface.Controls.Add(logLayout);
 		Control[] pages = { dashboardPage, mapSurface, logSurface };
 		foreach (Control page in pages)
 		{
@@ -1178,6 +1210,7 @@ public sealed class Form1 : Form
 	{
 		AppPaths.Settings.EnsureConfig();
 		_config = ConfigLoader.Load(ConfigPath);
+		RefreshSettingsSummaries();
 		_txtCharacter.Text = (_autoCharacter.Checked ? "" : _config.Live.CharacterName);
 		AppendLog(LogLevel.Info, "AO VIVO: módulos OFF. SubPunish somente Tai/Água; Sub normal cria decoy e não dispara combo. Remoção antecipada é HEURÍSTICA.", null);
 		RefreshModuleButtons();
@@ -1264,6 +1297,7 @@ public sealed class Form1 : Form
 		_btnCastTurn.Tag = false;
 		RefreshModuleButtons();
 		RefreshModeBadge();
+		RefreshSettingsSummaries();
 	}
 
 	private void ConnectToGame()
@@ -1287,6 +1321,7 @@ public sealed class Form1 : Form
 			}
 		};
 		_ctx = new LiveContext(_config, _session.Access, _autoCharacter.Checked);
+		RefreshSettingsSummaries();
 		_ctx.MemoryLog.EntryLogged += OnLogEntry;
 		foreach (LogEntry item in _ctx.MemoryLog.Snapshot())
 		{
@@ -1543,6 +1578,7 @@ public sealed class Form1 : Form
 							AllowCounterAttackSequence = false
 						}
 					};
+					RefreshSettingsSummaries();
 					AppendLog(LogLevel.Info, "Configurações de " + liveFrame.PlayerName + " carregadas; módulos OFF.", null);
 					ConnectToGame();
 					return;
