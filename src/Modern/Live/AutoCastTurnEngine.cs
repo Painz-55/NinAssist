@@ -110,10 +110,42 @@ public sealed class AutoCastTurnEngine
 		return cast.RemainingMs - (now - (cast.ObservedAtMs ?? frame.CapturedAtMs));
 	}
 
-	private static Direction Desired(LiveFrame frame)
+	private TargetInfo? ResolveTarget(LiveFrame frame)
 	{
+		if (_settings.TargetMode == CastTurnTargetMode.Nearest)
+		{
+			return NearestTargetPolicy.Resolve(frame, _settings.NearestRadiusTiles, _settings.NearestIgnoreSameVillage);
+		}
 		TargetInfo target = frame.Snapshot.Target;
 		if ((object)target == null || !target.IsAlive || !target.IsTargeted)
+		{
+			return null;
+		}
+		return target;
+	}
+
+	private bool TargetMatches(LiveFrame frame, string trackingTargetId)
+	{
+		if (_settings.TargetMode == CastTurnTargetMode.Nearest)
+		{
+			return frame.MapPlayers != null;
+		}
+		return !(frame.Snapshot.Target?.Id != trackingTargetId);
+	}
+
+	private bool TargetStillValid(LiveFrame frame, TargetInfo? target)
+	{
+		if (_settings.TargetMode == CastTurnTargetMode.Nearest)
+		{
+			return frame.MapPlayers != null;
+		}
+		return (object)target != null && target.IsAlive && target.IsTargeted && target.Id == _tracking?.TargetId;
+	}
+
+	private Direction Desired(LiveFrame frame)
+	{
+		TargetInfo target = ResolveTarget(frame);
+		if ((object)target == null || !target.IsAlive)
 		{
 			return Direction.None;
 		}
@@ -145,7 +177,7 @@ public sealed class AutoCastTurnEngine
 			if ((object)dispatching != null)
 			{
 				CastObservation cast = frame.Cast;
-				if ((object)cast != null && cast.Active && cast.Valid && frame.Map == dispatching.Map && !(frame.Snapshot.Player.Id != dispatching.PlayerId) && frame.Snapshot.Player.IsAlive && !(frame.Snapshot.Target?.Id != dispatching.TargetId) && cast.SpellId == dispatching.SpellId && _settings.Allows(cast.SpellId) && cast.StartedAtGameMs == dispatching.StartedAtGameMs && cast.TotalMs == dispatching.TotalMs)
+				if ((object)cast != null && cast.Active && cast.Valid && frame.Map == dispatching.Map && !(frame.Snapshot.Player.Id != dispatching.PlayerId) && frame.Snapshot.Player.IsAlive && TargetMatches(frame, dispatching.TargetId) && cast.SpellId == dispatching.SpellId && _settings.Allows(cast.SpellId) && cast.StartedAtGameMs == dispatching.StartedAtGameMs && cast.TotalMs == dispatching.TotalMs)
 				{
 					if (!TimingValid(frame, cast, now))
 					{
@@ -249,7 +281,7 @@ public sealed class AutoCastTurnEngine
 			Status = $"Auto Cast Turn: jutsu ID {cast.SpellId} excluído; sem giro";
 			return;
 		}
-		TargetInfo target = frame.Snapshot.Target;
+		TargetInfo target = ResolveTarget(frame);
 		if ((object)_tracking == null || _tracking.SpellId != cast.SpellId || _tracking.StartedAtGameMs != cast.StartedAtGameMs)
 		{
 			if (cast.StartedAtGameMs <= _lastStarted)
@@ -269,7 +301,7 @@ public sealed class AutoCastTurnEngine
 		{
 			_samples++;
 		}
-		if (frame.Map != _tracking.Map || frame.Snapshot.Player.Id != _tracking.PlayerId || (object)target == null || !target.IsAlive || !target.IsTargeted || target.Id != _tracking.TargetId || cast.TotalMs != _tracking.TotalMs || cast.RemainingMs > _previousRemaining + 50 || higherPriorityBusy)
+		if (frame.Map != _tracking.Map || frame.Snapshot.Player.Id != _tracking.PlayerId || !TargetStillValid(frame, target) || cast.TotalMs != _tracking.TotalMs || cast.RemainingMs > _previousRemaining + 50 || higherPriorityBusy)
 		{
 			_consumed = true;
 			Status = "Auto Cast Turn: cast descartado por alvo/contexto/prioridade";

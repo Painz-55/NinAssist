@@ -8,5 +8,6 @@ public enum LiveInputKind
 	Tool,
 	Follow,
 	Stamina,
-	CastTurning
+	CastTurning,
+	TargetMemory
 }

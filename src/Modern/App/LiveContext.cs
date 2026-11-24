@@ -78,6 +78,10 @@ public sealed class LiveContext : IDisposable
 
 	private volatile bool _combatEnabled;
 
+	private volatile bool _attackEnabled;
+
+	private volatile bool _toolEnabled;
+
 	private volatile bool _combatAuthorized;
 
 	private volatile bool _followEnabled;
@@ -85,6 +89,10 @@ public sealed class LiveContext : IDisposable
 	private volatile bool _staminaEnabled;
 
 	private volatile bool _castTurnEnabled;
+
+	private volatile bool _autoTargetEnabled;
+
+	private bool _dispatchingTargetMemory;
 
 	private bool _dispatchingCastTurn;
 
@@ -133,6 +141,8 @@ public sealed class LiveContext : IDisposable
 	public AutoStaminaEngine? Stamina { get; private set; }
 
 	public AutoCastTurnEngine? CastTurn { get; private set; }
+
+	public AutoTargetEngine? AutoTarget { get; private set; }
 
 	public NavigationFrame? Navigation
 	{
@@ -197,6 +207,8 @@ public sealed class LiveContext : IDisposable
 	}
 
 	public string CastTurnStatus { get; private set; } = "Auto Cast Turn OFF";
+
+	public string AutoTargetStatus { get; private set; } = "Auto Target OFF";
 
 	public bool CounterAttackAuthorized => _authorized;
 
@@ -374,6 +386,31 @@ public sealed class LiveContext : IDisposable
 					liveContext._dispatchingCastTurn = false;
 				}
 			});
+			var targetMemoryWriter = new TargetMemoryWriter();
+			AutoTarget = new AutoTargetEngine(_clock, config.AutoTarget, delegate(TargetInfo target)
+			{
+				liveContext._dispatchFrame = liveContext.Frame;
+				if (liveContext._dispatchFrame == null)
+					return ActionResult.Rejected("Leitura indisponível para seleção");
+				liveContext._dispatchingTargetMemory = true;
+				try
+				{
+					LiveFrame? current = liveContext.Frame;
+					TargetInfo? currentTarget = NearestTargetPolicy.Resolve(current, config.AutoTarget.RadiusTiles, config.AutoTarget.IgnoreSameVillage);
+					if (current == null || currentTarget?.Id != target.Id ||
+						Math.Abs(currentTarget.PositionX - target.PositionX) > 0.25 ||
+						Math.Abs(currentTarget.PositionY - target.PositionY) > 0.25)
+						return ActionResult.Rejected("Alvo mudou desde a leitura anterior; sem escrita");
+					ActionResult actionResult = targetMemoryWriter.Select(liveContext.Provider.ProcessId,
+						liveContext.Provider.Profile, current, currentTarget, () => liveContext.CanDispatch(LiveInputKind.TargetMemory));
+					liveContext.Log.Log(actionResult.Accepted ? LogLevel.Info : LogLevel.Warning, "Auto Target: " + actionResult.Reason, EventOrigin.Requested);
+					return actionResult;
+				}
+				finally
+				{
+					liveContext._dispatchingTargetMemory = false;
+				}
+			});
 			AutoTurning = new AutoTurningEngine(_input, _clock, Log, config.ToAutoTurningOptions()with
 			{
 				Enabled = false,
@@ -426,7 +463,8 @@ public sealed class LiveContext : IDisposable
 			_automation = new ResponsiveAutomationLoop(Step, delegate(Exception ex2)
 			{
 				liveContext._autoEnabled = (liveContext._subEnabled = (liveContext._authorized = (liveContext._combatEnabled = (liveContext._combatAuthorized = (liveContext._followEnabled = false)))));
-				liveContext._staminaEnabled = (liveContext._castTurnEnabled = false);
+				liveContext._staminaEnabled = (liveContext._castTurnEnabled = (liveContext._autoTargetEnabled = false));
+				liveContext._attackEnabled = liveContext._toolEnabled = false;
 				lock (liveContext._automationLock)
 				{
 					liveContext._input?.ReleaseFollow();
@@ -473,19 +511,31 @@ public sealed class LiveContext : IDisposable
 						NavigationFrame navigationFrame = Volatile.Read(in liveContext._navigation);
 						liveContext.Provider.ReadNavigation = !liveContext._subReadBurst && !flag2 && flag && ((object)navigationFrame == null || navigationFrame.Map != Volatile.Read(in liveContext._frame)?.Map || liveContext._clock.NowMs - navigationFrame.CapturedAtMs >= 100);
 						MapPlayersFrame mapPlayersFrame = Volatile.Read(in liveContext._mapPlayers);
-						liveContext.Provider.ReadMapPlayers = !liveContext._subReadBurst && !flag2 && liveContext._access.Allows(AppFeature.MapPlayers) && ((object)mapPlayersFrame == null || mapPlayersFrame.Map != Volatile.Read(in liveContext._frame)?.Map || liveContext._clock.NowMs - mapPlayersFrame.CapturedAtMs >= ((liveContext._castTurnEnabled || liveContext._combatEnabled) ? 350 : (liveContext._overlayEnabled ? 100 : 200)));
+						liveContext.Provider.ReadMapPlayers = !liveContext._subReadBurst && (!flag2 || (liveContext._castTurnEnabled && liveContext.Config.AutoCastTurn.TargetMode == CastTurnTargetMode.Nearest)) && liveContext._access.Allows(AppFeature.MapPlayers) && ((object)mapPlayersFrame == null || mapPlayersFrame.Map != Volatile.Read(in liveContext._frame)?.Map || liveContext._clock.NowMs - mapPlayersFrame.CapturedAtMs >= ((liveContext._castTurnEnabled || liveContext._combatEnabled || liveContext._autoTargetEnabled) ? 350 : (liveContext._overlayEnabled ? 100 : 200)));
 						liveContext.Provider.ReadFullMap = !liveContext._subReadBurst && !flag2 && liveContext._access.Allows(AppFeature.MapPlayers) && liveContext.Provider.FullMap?.Map != Volatile.Read(in liveContext._frame)?.Map;
 						if (!liveContext._access.Allows(AppFeature.MapPlayers))
 						{
 							Volatile.Write(ref liveContext._mapPlayers, null);
 						}
 						liveContext.Provider.GetSnapshot();
-						Volatile.Write(ref liveContext._frame, liveContext.Provider.Frame);
 						if (liveContext.Provider.ReadMapPlayers)
 						{
 							Volatile.Write(ref liveContext._mapPlayers, liveContext.Provider.MapPlayers);
 						}
-						if ((object)liveContext.Provider.Frame == null)
+						LiveFrame frame3 = liveContext.Provider.Frame;
+						if ((object)frame3 != null && liveContext._access.Allows(AppFeature.MapPlayers))
+						{
+							MapPlayersFrame mapPlayersFrame2 = Volatile.Read(in liveContext._mapPlayers);
+							if ((object)mapPlayersFrame2 != null && mapPlayersFrame2.Map == frame3.Map && mapPlayersFrame2.LocalId == frame3.Snapshot.Player.Id && mapPlayersFrame2.CapturedAtMs <= frame3.CapturedAtMs && frame3.CapturedAtMs - mapPlayersFrame2.CapturedAtMs <= 600)
+							{
+								frame3 = frame3 with
+								{
+									MapPlayers = mapPlayersFrame2
+								};
+							}
+						}
+						Volatile.Write(ref liveContext._frame, frame3);
+						if ((object)frame3 == null)
 						{
 							Volatile.Write(ref liveContext._mapPlayers, null);
 						}
@@ -598,28 +648,32 @@ public sealed class LiveContext : IDisposable
 		_automation?.Wake();
 	}
 
-	public void SetCombatEnabled(bool enabled)
+	public bool SetAttackEnabled(bool enabled) => SetCombatFeatureEnabled(AppFeature.AutoAttack, enabled);
+
+	public bool SetToolEnabled(bool enabled) => SetCombatFeatureEnabled(AppFeature.Tool, enabled);
+
+	private bool SetCombatFeatureEnabled(AppFeature feature, bool enabled)
 	{
-		enabled = MacroAuthorization.Combat(enabled, _access.Allows(AppFeature.AutoAttack), _access.Allows(AppFeature.Tool));
-		if (!enabled)
-		{
-			_combatEnabled = false;
-			_combatAuthorized = false;
-		}
+		GameMemoryProfile? profile = Provider?.Profile;
+		enabled &= _access.Allows(feature) && LocalTrialPolicy.CanActuate(profile) &&
+			(!profile.ExternalProfile || profile.ValidatedInputKinds.Contains(feature == AppFeature.AutoAttack ? "Attack" : "Tool", StringComparer.Ordinal)) &&
+			(feature != AppFeature.AutoAttack || profile.ApprovesAttackMode(Config.CombatAssist.AttackMode.ToString()));
 		lock (_automationLock)
 		{
 			if (_disposed)
 			{
-				return;
+				return false;
 			}
 			Combat?.Reset();
 			_fanTurnAt = null;
 			_fanTurnTarget = null;
-			_combatEnabled = enabled;
-			_combatAuthorized = enabled;
-			Log.Log(LogLevel.Info, "AA/Tool " + (enabled ? "ON" : "OFF") + "; automático com autorização, alcances/intervalos configurados", EventOrigin.Requested);
+			if (feature == AppFeature.AutoAttack) _attackEnabled = enabled;
+			else _toolEnabled = enabled;
+			_combatEnabled = _combatAuthorized = _attackEnabled || _toolEnabled;
+			Log.Log(LogLevel.Info, $"{feature} {(enabled ? "ON" : "OFF")}; módulo independente; alcance/intervalo configurados", EventOrigin.Requested);
 		}
 		_automation?.Wake();
+		return enabled;
 	}
 
 	public void SetFollowEnabled(bool enabled)
@@ -666,7 +720,8 @@ public sealed class LiveContext : IDisposable
 
 	public bool SetCastTurnEnabled(bool enabled)
 	{
-		enabled &= _access.Allows(AppFeature.AutoCastTurn) && (object)Provider?.Profile.CastTiming != null;
+		enabled &= _access.Allows(AppFeature.AutoCastTurn) && (object)Provider?.Profile.CastTiming != null &&
+			(Config.AutoCastTurn.TargetMode != CastTurnTargetMode.Nearest || _access.Allows(AppFeature.MapPlayers));
 		if (!enabled)
 		{
 			_castTurnEnabled = false;
@@ -679,7 +734,28 @@ public sealed class LiveContext : IDisposable
 			}
 			CastTurn?.Reset();
 			_castTurnEnabled = enabled;
-			Log.Log(LogLevel.Info, "Auto Cast Turn " + (enabled ? "ON" : "OFF") + "; todos os casts válidos exceto IDs excluídos: " + string.Join(", ", Config.AutoCastTurn.ExcludedSpellIds), EventOrigin.Requested);
+			Log.Log(LogLevel.Info, "Auto Cast Turn " + (enabled ? "ON" : "OFF") + "; alvo " + Config.AutoCastTurn.TargetMode + "; todos os casts válidos exceto IDs excluídos: " + string.Join(", ", Config.AutoCastTurn.ExcludedSpellIds), EventOrigin.Requested);
+		}
+		_automation?.Wake();
+		return enabled;
+	}
+
+	public bool SetAutoTargetEnabled(bool enabled)
+	{
+		enabled &= _access.Allows(AppFeature.AutoTarget) && _access.Allows(AppFeature.MapPlayers);
+		if (!enabled)
+		{
+			_autoTargetEnabled = false;
+		}
+		lock (_automationLock)
+		{
+			if (_disposed)
+			{
+				return false;
+			}
+			AutoTarget?.Reset();
+			_autoTargetEnabled = enabled;
+			Log.Log(LogLevel.Info, "Auto Target " + (enabled ? "ON" : "OFF") + $"; escrita experimental; raio {Config.AutoTarget.RadiusTiles:0.#} tiles", EventOrigin.Requested);
 		}
 		_automation?.Wake();
 		return enabled;
@@ -715,6 +791,10 @@ public sealed class LiveContext : IDisposable
 		{
 			return new SafetyDecision(Allowed: false, "Fan exige aprovação de giro para esta build");
 		}
+		if ((kind == LiveInputKind.TargetMemory || (kind == LiveInputKind.CastTurning && Config.AutoCastTurn.TargetMode == CastTurnTargetMode.Nearest)) && !_access.Allows(AppFeature.MapPlayers))
+		{
+			return new SafetyDecision(Allowed: false, "Lista de jogadores não autorizada pelo Firebase");
+		}
 		AppFeature feature = kind switch
 		{
 			LiveInputKind.Attack => AppFeature.AutoAttack,
@@ -723,6 +803,7 @@ public sealed class LiveContext : IDisposable
 			LiveInputKind.Stamina => AppFeature.Stamina,
 			LiveInputKind.Punish => SubFeature,
 			LiveInputKind.CastTurning => AppFeature.AutoCastTurn,
+			LiveInputKind.TargetMemory => AppFeature.AutoTarget,
 			_ => AppFeature.AutoTurning,
 		};
 		if (kind != LiveInputKind.Turning && !_access.Allows(feature))
@@ -771,7 +852,9 @@ public sealed class LiveContext : IDisposable
 		switch (kind)
 		{
 		case LiveInputKind.CastTurning:
-			return LiveSafetyGate.CheckCastTurning(liveFrame, nowMs, _castTurnEnabled, foreground, emergency, textEntryFocused);
+			return LiveSafetyGate.CheckCastTurning(liveFrame, nowMs, _castTurnEnabled, foreground, emergency, textEntryFocused, Config.AutoCastTurn.TargetMode == CastTurnTargetMode.Selected);
+		case LiveInputKind.TargetMemory:
+			return LiveSafetyGate.CheckAutoTarget(liveFrame, nowMs, _autoTargetEnabled, foreground, emergency, textEntryFocused);
 		case LiveInputKind.Stamina:
 		{
 			SafetyDecision result = LiveSafetyGate.CheckStamina(liveFrame, nowMs, _staminaEnabled, foreground, emergency, textEntryFocused);
@@ -795,7 +878,7 @@ public sealed class LiveContext : IDisposable
 		}
 		if (flag)
 		{
-			return LiveSafetyGate.CheckTargetedModule(liveFrame, nowMs, _combatEnabled, _combatAuthorized, foreground, emergency, textEntryFocused);
+			return LiveSafetyGate.CheckTargetedModule(liveFrame, nowMs, kind == LiveInputKind.Attack ? _attackEnabled : _toolEnabled, _combatAuthorized, foreground, emergency, textEntryFocused);
 		}
 		switch (kind)
 		{
@@ -834,7 +917,7 @@ public sealed class LiveContext : IDisposable
 				{
 					return new SafetyDecision(Allowed: false, "Giro Fan sem aprovação de Attack");
 				}
-				return LiveSafetyGate.CheckTargetedModule(liveFrame, nowMs, _combatEnabled, _combatAuthorized, foreground, emergency, textEntryFocused);
+				return LiveSafetyGate.CheckTargetedModule(liveFrame, nowMs, _attackEnabled, _combatAuthorized, foreground, emergency, textEntryFocused);
 			}
 			if (_preparingComboTurn)
 			{
@@ -927,6 +1010,19 @@ public sealed class LiveContext : IDisposable
 						return CastTurn?.CanMaintain(liveFrame2, _clock.NowMs) ?? false;
 					}
 					return false;
+				}
+				if (kind == LiveInputKind.TargetMemory)
+				{
+					if (!_dispatchingTargetMemory || SubNeedsPriority || liveFrame2.Cast?.Active == true)
+					{
+						return false;
+					}
+					TargetInfo? expected = NearestTargetPolicy.Resolve(liveFrame, Config.AutoTarget.RadiusTiles, Config.AutoTarget.IgnoreSameVillage);
+					TargetInfo? current = NearestTargetPolicy.Resolve(liveFrame2, Config.AutoTarget.RadiusTiles, Config.AutoTarget.IgnoreSameVillage);
+					return expected != null && current?.Id == expected.Id &&
+						Math.Abs(current.PositionX - expected.PositionX) <= 0.25 &&
+						Math.Abs(current.PositionY - expected.PositionY) <= 0.25 &&
+						liveFrame2.Snapshot.Target?.Id != expected.Id;
 				}
 				if (kind == LiveInputKind.Follow)
 				{
@@ -1145,12 +1241,14 @@ public sealed class LiveContext : IDisposable
 		if (accessMask != _accessMask || !_access.IsValid)
 		{
 			_accessMask = accessMask;
-			_autoEnabled = (_subEnabled = (_authorized = (_combatEnabled = (_combatAuthorized = (_followEnabled = (_staminaEnabled = (_castTurnEnabled = false)))))));
+			_autoEnabled = (_subEnabled = (_authorized = (_combatEnabled = (_combatAuthorized = (_followEnabled = (_staminaEnabled = (_castTurnEnabled = (_autoTargetEnabled = false))))))));
 			_input?.ReleaseFollow();
 			Follow?.Reset();
 			Combat?.Reset();
 			Stamina?.Reset();
 			CastTurn?.Reset();
+			AutoTarget?.Reset();
+			_attackEnabled = _toolEnabled = false;
 			ResetPunish();
 			AutoTurning?.ResetCadence();
 		}
@@ -1263,6 +1361,9 @@ public sealed class LiveContext : IDisposable
 		{
 			_lastCastTurnDiagnostic = null;
 		}
+		SafetyDecision autoTargetSafety = CheckSafety(LiveInputKind.TargetMemory);
+		AutoTarget?.Update(frame, _autoTargetEnabled, autoTargetSafety.Allowed, frame?.Cast?.Active == true || SubNeedsPriority);
+		AutoTargetStatus = (autoTargetSafety.Allowed ? (AutoTarget?.Status ?? "Indisponível") : autoTargetSafety.Reason);
 		UpdateFollow();
 		AutoCastTurnEngine? castTurn = CastTurn;
 		int num;
@@ -1334,7 +1435,8 @@ public sealed class LiveContext : IDisposable
 		{
 			_disposed = true;
 			_autoEnabled = (_subEnabled = (_authorized = (_combatEnabled = (_combatAuthorized = (_followEnabled = false)))));
-			_staminaEnabled = (_castTurnEnabled = false);
+			_staminaEnabled = (_castTurnEnabled = (_autoTargetEnabled = false));
+			_attackEnabled = _toolEnabled = false;
 			_stop.Cancel();
 			lock (_automationLock)
 			{

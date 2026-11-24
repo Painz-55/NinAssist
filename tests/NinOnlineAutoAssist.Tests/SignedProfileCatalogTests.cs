@@ -309,7 +309,8 @@ public sealed class SignedProfileCatalogTests
         var profile = Assert.IsType<GameMemoryProfile>(Select("package-profiles"));
         Assert.True(profile.ActuationValidated);
         Assert.False(profile.ExperimentalTrial);
-        Assert.Equal(7, profile.ValidatedInputKinds.Length);
+        Assert.Equal(8, profile.ValidatedInputKinds.Length);
+        Assert.Contains("TargetMemory", profile.ValidatedInputKinds);
         Assert.True(profile.ApprovesAttackMode("Melee"));
         Assert.True(profile.ApprovesAttackMode("Fan"));
         Assert.False(profile.ApprovesAttackMode("HisuyFan"));

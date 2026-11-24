@@ -7,6 +7,7 @@ public static class LiveKeySettings
     public static IReadOnlyDictionary<string, ushort> Keys { get; } = Build();
     public static string NormalizeGameKey(string key) => key.Length == 4 && key.StartsWith("Num", StringComparison.Ordinal) &&
         key[3] is >= '0' and <= '9' ? key[3].ToString() : key;
+
     private static Dictionary<string, ushort> Build()
     {
         var keys = new Dictionary<string, ushort>(StringComparer.OrdinalIgnoreCase);

@@ -17,7 +17,7 @@ internal sealed class AutoCastTurnForm : Form
 		base.Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 		Settings = settings;
 		Text = "Auto Cast Turn — janela final";
-		base.ClientSize = new Size(500, 540);
+		base.ClientSize = new Size(500, 620);
 		base.FormBorderStyle = FormBorderStyle.FixedDialog;
 		base.StartPosition = FormStartPosition.CenterParent;
 		base.MaximizeBox = (base.MinimizeBox = false);
@@ -33,8 +33,19 @@ internal sealed class AutoCastTurnForm : Form
 		{
 			Width = 465,
 			Height = 125,
-			Text = "Por padrão, gira no fim de todo cast válido observado com alvo. Somente os IDs informados abaixo NÃO giram. Confira IDs no diagnóstico; não adivinhe.\nMantém/corrige a direção na janela final (40–250 ms, até o último quarto da barra). Não conjura magia. F12 e cancelamentos liberam a tecla; efeito/hit não garantidos."
+			Text = "Por padrão, gira no fim de todo cast válido observado com alvo selecionado. No modo Próximo, usa o jogador vivo mais próximo da leitura do mapa; não muda a seleção no jogo. Somente os IDs abaixo NÃO giram.\nMantém/corrige a direção na janela final (40–250 ms). Não conjura magia. F12 libera a tecla; efeito/hit não garantidos."
 		});
+		flowLayoutPanel.Controls.Add(new Label { AutoSize = true, Text = "Alvo para o giro:" });
+		ComboBox mode = new ComboBox { Width = 250, DropDownStyle = ComboBoxStyle.DropDownList };
+		mode.Items.AddRange(new object[] { "Selecionado no jogo", "Jogador mais próximo" });
+		mode.SelectedIndex = settings.TargetMode == CastTurnTargetMode.Nearest ? 1 : 0;
+		flowLayoutPanel.Controls.Add(mode);
+		flowLayoutPanel.Controls.Add(new Label { AutoSize = true, Text = "Raio do modo Próximo (tiles):" });
+		NumericUpDown radius = new NumericUpDown { Minimum = 1, Maximum = 40, DecimalPlaces = 1, Increment = 0.5m,
+			Value = (decimal)Math.Clamp(settings.NearestRadiusTiles, 1, 40), Width = 180 };
+		flowLayoutPanel.Controls.Add(radius);
+		CheckBox ignoreVillage = new CheckBox { Text = "Próximo: não mirar membros da minha vila (vila desconhecida também)", Width = 455, Checked = settings.NearestIgnoreSameVillage };
+		flowLayoutPanel.Controls.Add(ignoreVillage);
 		flowLayoutPanel.Controls.Add(new Label
 		{
 			Text = "IDs de jutsu a EXCLUIR (um por linha; vazio = nenhum):",
@@ -132,7 +143,10 @@ internal sealed class AutoCastTurnForm : Form
 				AutoCastTurnSettings autoCastTurnSettings = settings with
 				{
 					LeadTimeMs = (int)lead.Value,
-					ExcludedSpellIds = list.ToArray()
+					ExcludedSpellIds = list.ToArray(),
+					TargetMode = mode.SelectedIndex == 1 ? CastTurnTargetMode.Nearest : CastTurnTargetMode.Selected,
+					NearestRadiusTiles = (double)radius.Value,
+					NearestIgnoreSameVillage = ignoreVillage.Checked
 				};
 				autoCastTurnSettings.Validate();
 				autoCastTurnForm.Settings = autoCastTurnSettings;

@@ -13,4 +13,7 @@ public sealed record LiveFrame(GameSnapshot Snapshot, long CapturedAtMs, int Map
 	public IReadOnlyList<ObservedBuff> ObservedActiveBuffs { get; init; } = Array.Empty<ObservedBuff>();
 
 	public IReadOnlyList<string> UnmappedSignals { get; init; } = new string[6] { "Casting", "ActionBlock", "SubstitutionCooldownRemaining", "Threat", "AttackerIdentity", "QSCostCooldownAndEffect" };
+
+	/// <summary>Last known map players snapshot attached by the reader, when available.</summary>
+	public MapPlayersFrame? MapPlayers { get; init; }
 }

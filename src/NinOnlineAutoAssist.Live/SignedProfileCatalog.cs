@@ -81,12 +81,16 @@ public static class SignedProfileCatalog
                 throw new InvalidOperationException("Invalid local trial profile");
             _ = element.GetProperty("MapIdentityInRoots").GetBoolean();
             var actions = element.GetProperty("ValidatedInputKinds");
-            if (actions.ValueKind != JsonValueKind.Array || actions.GetArrayLength() > 7 ||
+            if (actions.ValueKind != JsonValueKind.Array || actions.GetArrayLength() > 8 ||
                 actions.EnumerateArray().Any(a => a.ValueKind != JsonValueKind.String ||
-                    a.GetString() is not ("Turning" or "Punish" or "Attack" or "Tool" or "Follow" or "Stamina" or "CastTurning")))
+                    a.GetString() is not ("Turning" or "Punish" or "Attack" or "Tool" or "Follow" or "Stamina" or "CastTurning" or "TargetMemory")))
                 throw new InvalidOperationException("Invalid approved input list");
             if (actions.EnumerateArray().Select(a => a.GetString()).Distinct().Count() != actions.GetArrayLength())
                 throw new InvalidOperationException("Duplicate approved input kind");
+            if (actions.EnumerateArray().Any(a => a.GetString() == "TargetMemory") &&
+                (gameHash != "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634" ||
+                 selected.ValueKind != JsonValueKind.Object || selected.GetProperty("PlayerKind").GetInt32() != 1))
+                throw new InvalidOperationException("TargetMemory requires validated build and player schema");
             if (!element.GetProperty("ActuationValidated").GetBoolean() && !trial && actions.GetArrayLength() != 0)
                 throw new InvalidOperationException("Read-only profile cannot approve input");
             var modes = element.TryGetProperty("ValidatedAttackModes", out var modeList) ? modeList : default;

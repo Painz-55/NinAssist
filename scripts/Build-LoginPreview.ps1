@@ -4,7 +4,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-if (-not $OutputDirectory) { $OutputDirectory = Join-Path (Split-Path -Parent $root) 'NinAssist-LoginPreview-1.2.0' }
+if (-not $OutputDirectory) { $OutputDirectory = Join-Path (Split-Path -Parent $root) 'NinAssist-LoginPreview-1.2.1' }
 if ((Test-Path $OutputDirectory) -and @(Get-ChildItem $OutputDirectory -Force).Count -gt 0) {
     throw 'Use uma pasta nova: a prévia anterior não será sobrescrita.'
 }
@@ -15,7 +15,7 @@ if (-not $config.ProjectId -or -not $config.ApiKey -or $config.private_key -or $
 $artifacts = Join-Path $env:LOCALAPPDATA ('Temp\NinAssist-login-preview-' + [guid]::NewGuid().ToString('N'))
 Push-Location $root
 try {
-    & dotnet publish src/Modern/App/NinOnlineAutoAssist.App.csproj -c Release -r win-x64 --self-contained true --artifacts-path $artifacts '-p:LoginPreviewBuild=true' '-p:PublishSingleFile=false' '-p:PublishTrimmed=false' '-p:Version=1.2.0' -o $OutputDirectory
+    & dotnet publish src/Modern/App/NinOnlineAutoAssist.App.csproj -c Release -r win-x64 --self-contained true --artifacts-path $artifacts '-p:LoginPreviewBuild=true' '-p:PublishSingleFile=false' '-p:PublishTrimmed=false' '-p:Version=1.2.1' -o $OutputDirectory
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar a prévia.' }
     @{ ProjectId=$config.ProjectId; ApiKey=$config.ApiKey; DatabaseId=$(if ($config.DatabaseId) { $config.DatabaseId } else { '(default)' }) } |
         ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory 'firebase.config.json') -Encoding UTF8

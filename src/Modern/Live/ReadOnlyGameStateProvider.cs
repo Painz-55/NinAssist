@@ -411,7 +411,8 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
 									}
 									list3.Add(new MapPlayer(num12, text4, num2, x, y, num12 == num, num12 == item)
 									{
-										Village = village
+										Village = village,
+									IsAlive = SafeAlive(objectValue4)
 									});
 								}
 								catch
@@ -978,6 +979,18 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
 			throw new InvalidOperationException("Field schema/read mismatch: " + name);
 		}
 		return result;
+	}
+
+	private bool SafeAlive(ClrObject obj)
+	{
+		try
+		{
+			return IntArray(obj, Profile.Vitals, 4)[1] > 0;
+		}
+		catch
+		{
+			return false;
+		}
 	}
 
 	private static int[] IntArray(ClrObject obj, string name, int expectedLength)

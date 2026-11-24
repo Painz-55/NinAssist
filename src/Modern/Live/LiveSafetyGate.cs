@@ -4,16 +4,22 @@ namespace NinOnlineAutoAssist.Live;
 
 public static class LiveSafetyGate
 {
-	public static SafetyDecision CheckCastTurning(LiveFrame? frame, long nowMs, bool enabled, bool foreground, bool emergency, bool textEntryFocused)
+	public static SafetyDecision CheckCastTurning(LiveFrame? frame, long nowMs, bool enabled, bool foreground, bool emergency, bool textEntryFocused, bool requiresSelectedTarget = true)
 	{
 		if (!enabled)
 		{
 			return new SafetyDecision(Allowed: false, "Auto Cast Turn OFF");
 		}
-		SafetyDecision result = CheckTargetedModule(frame, nowMs, enabled: true, authorized: true, foreground, emergency, textEntryFocused);
+		SafetyDecision result = (requiresSelectedTarget
+			? CheckTargetedModule(frame, nowMs, enabled: true, authorized: true, foreground, emergency, textEntryFocused)
+			: CheckCommon(frame, nowMs, foreground, holdPressed: false, requireHold: false, emergency, textEntryFocused));
 		if (!result.Allowed)
 		{
 			return result;
+		}
+		if (!requiresSelectedTarget && frame.MapPlayers is null)
+		{
+			return new SafetyDecision(Allowed: false, "Auto Cast Turn: lista de jogadores indisponível para o alvo mais próximo");
 		}
 		if (AutoCastTurnEngine.Fresh(frame, nowMs))
 		{
@@ -24,6 +30,24 @@ public static class LiveSafetyGate
 			}
 		}
 		return new SafetyDecision(Allowed: false, "Auto Cast Turn: cast desconhecido ou dados antigos");
+	}
+
+	public static SafetyDecision CheckAutoTarget(LiveFrame? frame, long nowMs, bool enabled, bool foreground, bool emergency, bool textEntryFocused)
+	{
+		if (!enabled)
+		{
+			return new SafetyDecision(Allowed: false, "Auto Target OFF");
+		}
+		SafetyDecision result = CheckCommon(frame, nowMs, foreground, holdPressed: false, requireHold: false, emergency, textEntryFocused);
+		if (!result.Allowed)
+		{
+			return result;
+		}
+		if (frame.MapPlayers is null)
+		{
+			return new SafetyDecision(Allowed: false, "Auto Target: lista de jogadores indisponível");
+		}
+		return new SafetyDecision(Allowed: true, "Auto Target autorizado: lista de jogadores + foco + dados válidos");
 	}
 
 	public static SafetyDecision Check(LiveFrame? frame, long nowMs, bool foreground, bool holdPressed, bool emergency, bool manualMovement, bool textEntryFocused)

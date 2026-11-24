@@ -158,7 +158,7 @@ public static class SignedProfileCatalog
 			}
 			item.GetProperty("MapIdentityInRoots").GetBoolean();
 			JsonElement property4 = item.GetProperty("ValidatedInputKinds");
-			if (property4.ValueKind != JsonValueKind.Array || property4.GetArrayLength() > 7 || property4.EnumerateArray().Any(delegate(JsonElement a)
+			if (property4.ValueKind != JsonValueKind.Array || property4.GetArrayLength() > 8 || property4.EnumerateArray().Any(delegate(JsonElement a)
 			{
 				bool flag5 = a.ValueKind != JsonValueKind.String;
 				if (!flag5)
@@ -173,6 +173,7 @@ public static class SignedProfileCatalog
 					case "Punish":
 					case "Tool":
 					case "CastTurning":
+					case "TargetMemory":
 						flag6 = true;
 						break;
 					default:
@@ -191,6 +192,10 @@ public static class SignedProfileCatalog
 			{
 				throw new InvalidOperationException("Duplicate approved input kind");
 			}
+			if (property4.EnumerateArray().Any(a => a.GetString() == "TargetMemory") &&
+				(text != "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634" ||
+				 property3.ValueKind != JsonValueKind.Object || property3.GetProperty("PlayerKind").GetInt32() != 1))
+				throw new InvalidOperationException("TargetMemory requires the validated exact game build and player schema");
 			if (!item.GetProperty("ActuationValidated").GetBoolean() && !flag4 && property4.GetArrayLength() != 0)
 			{
 				throw new InvalidOperationException("Read-only profile cannot approve input");

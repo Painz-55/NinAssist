@@ -11,6 +11,7 @@ using NinOnlineAutoAssist.Core.Abstractions;
 using NinOnlineAutoAssist.Core.Config;
 using NinOnlineAutoAssist.Core.Events;
 using NinOnlineAutoAssist.Core.Logging;
+using NinOnlineAutoAssist.Core.Models;
 using NinOnlineAutoAssist.Live;
 
 namespace NinOnlineAutoAssist.App;
@@ -30,8 +31,6 @@ internal sealed class LiveInputController : IOrientationController, IActionExecu
 		[FieldOffset(0)]
 		public KeyboardInput Keyboard;
 
-		[FieldOffset(0)]
-		public MouseInput Mouse;
 	}
 
 	private struct KeyboardInput
@@ -39,21 +38,6 @@ internal sealed class LiveInputController : IOrientationController, IActionExecu
 		public ushort VirtualKey;
 
 		public ushort ScanCode;
-
-		public uint Flags;
-
-		public uint Time;
-
-		public nuint ExtraInfo;
-	}
-
-	private struct MouseInput
-	{
-		public int X;
-
-		public int Y;
-
-		public uint MouseData;
 
 		public uint Flags;
 
@@ -72,6 +56,7 @@ internal sealed class LiveInputController : IOrientationController, IActionExecu
 
 		public int Bottom;
 	}
+
 
 	private struct GuiThreadInfo
 	{
@@ -238,8 +223,7 @@ internal sealed class LiveInputController : IOrientationController, IActionExecu
 			["FaceDown"] = "End",
 			["FaceLeft"] = "Delete",
 			["FaceRight"] = "PageDown"
-		})
-		{
+		})		{
 			if (!bindings.TryGetValue(item2.Key, out string[] value2) || !value2.Contains(item2.Value))
 			{
 				throw new InvalidOperationException("Binding " + item2.Key + " changed; revalidate inputs before live mode.");

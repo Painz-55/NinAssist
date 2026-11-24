@@ -25,6 +25,7 @@ public sealed record AutoAssistConfig
     public LiveSection Live { get; init; } = new();
     public CombatAssistSettings CombatAssist { get; init; } = new();
     public AutoCastTurnSettings AutoCastTurn { get; init; } = new();
+    public AutoTargetSettings AutoTarget { get; init; } = new();
 
     public sealed record LiveSection
     {

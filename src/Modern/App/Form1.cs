@@ -91,15 +91,21 @@ public sealed class Form1 : Form
 
 	private Button _btnCombat;
 
+	private Button _btnTool;
+
 	private Button _btnFollow;
 
 	private Button _btnStamina;
+
+	private Button _btnAutoTarget;
 
 	private Label _lblCombat;
 
 	private Label _lblFollow;
 
 	private Label _lblStamina;
+
+	private Label _lblAutoTarget;
 
 	private TextBox _txtCharacter;
 
@@ -269,14 +275,14 @@ public sealed class Form1 : Form
 		TableLayoutPanel tableLayoutPanel3 = new TableLayoutPanel
 		{
 			Dock = DockStyle.Fill,
-			ColumnCount = 7,
+			ColumnCount = 9,
 			RowCount = 2,
 			BackColor = Bg,
 			Padding = new Padding(0, 4, 0, 2)
 		};
-		for (int num = 0; num < 7; num++)
+		for (int num = 0; num < 9; num++)
 		{
-			tableLayoutPanel3.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 14.2857f));
+			tableLayoutPanel3.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 9f));
 		}
 		tableLayoutPanel3.RowStyles.Add(new RowStyle(SizeType.Absolute, 82f));
 		tableLayoutPanel3.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
@@ -294,23 +300,38 @@ public sealed class Form1 : Form
 			RefreshModuleButtons();
 		};
 		ContextMenuStrip contextMenuStrip = new ContextMenuStrip();
-		contextMenuStrip.Items.Add("Excluir jutsus do Cast Turn…", null, delegate
+		contextMenuStrip.Items.Add("Configurar modo e jutsus do Cast Turn…", null, delegate
 		{
 			ConfigureCastTurn();
 		});
 		_btnCastTurn.ContextMenuStrip = contextMenuStrip;
+		_btnAutoTarget = MakeModuleButton("AUTO TARGET", on: false);
+		_btnAutoTarget.Click += delegate
+		{
+			object tag = _btnAutoTarget.Tag;
+			bool flag = !(tag is bool) || !(bool)tag;
+			_btnAutoTarget.Tag = _ctx?.SetAutoTargetEnabled(flag) ?? false;
+			RefreshModuleButtons();
+		};
 		_btnSubPunish = MakeModuleButton("SUBPUNISH TAI/ÁGUA", on: false);
 		_btnSubPunish.Click += delegate
 		{
 			ToggleSubPunish();
 		};
-		_btnCombat = MakeModuleButton("AA + TOOL", on: false);
+		_btnCombat = MakeModuleButton("AUTO AA", on: false);
 		_btnCombat.Click += delegate
 		{
 			object tag = _btnCombat.Tag;
 			bool flag = !(tag is bool) || !(bool)tag;
-			_btnCombat.Tag = flag;
-			_ctx?.SetCombatEnabled(flag);
+			_btnCombat.Tag = _ctx?.SetAttackEnabled(flag) ?? false;
+			RefreshModuleButtons();
+		};
+		_btnTool = MakeModuleButton("AUTO TOOL", on: false);
+		_btnTool.Click += delegate
+		{
+			object tag = _btnTool.Tag;
+			bool flag = !(tag is bool) || !(bool)tag;
+			_btnTool.Tag = _ctx?.SetToolEnabled(flag) ?? false;
 			RefreshModuleButtons();
 		};
 		_btnFollow = MakeModuleButton("AUTO FOLLOW", on: false);
@@ -368,11 +389,13 @@ public sealed class Form1 : Form
 		tableLayoutPanel3.Controls.Add(_btnCastTurn, 1, 0);
 		tableLayoutPanel3.Controls.Add(_btnSubPunish, 2, 0);
 		tableLayoutPanel3.Controls.Add(_btnCombat, 3, 0);
-		tableLayoutPanel3.Controls.Add(_btnFollow, 4, 0);
-		tableLayoutPanel3.Controls.Add(_btnStamina, 5, 0);
-		tableLayoutPanel3.Controls.Add(button2, 6, 0);
+		tableLayoutPanel3.Controls.Add(_btnTool, 4, 0);
+		tableLayoutPanel3.Controls.Add(_btnFollow, 5, 0);
+		tableLayoutPanel3.Controls.Add(_btnStamina, 6, 0);
+		tableLayoutPanel3.Controls.Add(_btnAutoTarget, 7, 0);
+		tableLayoutPanel3.Controls.Add(button2, 8, 0);
 		tableLayoutPanel3.Controls.Add(_lblProvider, 0, 1);
-		tableLayoutPanel3.SetColumnSpan(_lblProvider, 7);
+		tableLayoutPanel3.SetColumnSpan(_lblProvider, 9);
 		tableLayoutPanel.Controls.Add(tableLayoutPanel3, 0, 1);
 		TableLayoutPanel tableLayoutPanel4 = new TableLayoutPanel
 		{
@@ -407,8 +430,9 @@ public sealed class Form1 : Form
 		_lblFollow = AddStatusRow(tableLayoutPanel5, 9, "FOLLOW — TECLA SEGURADA");
 		_lblStamina = AddStatusRow(tableLayoutPanel5, 10, "STAMINA — LIMITES CONFIGURÁVEIS");
 		_lblCastTurn = AddStatusRow(tableLayoutPanel5, 11, "AUTO CAST TURN — FINAL DO CAST");
-		tableLayoutPanel5.RowCount = 12;
-		tableLayoutPanel5.Height = 480;
+		_lblAutoTarget = AddStatusRow(tableLayoutPanel5, 12, "AUTO TARGET — ALVO MAIS PRÓXIMO");
+		tableLayoutPanel5.RowCount = 13;
+		tableLayoutPanel5.Height = 520;
 		TableLayoutPanel tableLayoutPanel6 = new TableLayoutPanel
 		{
 			Dock = DockStyle.Fill,
@@ -699,17 +723,19 @@ public sealed class Form1 : Form
 	{
 		var grid = new TableLayoutPanel
 		{
-			Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2,
+			Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 3,
 			BackColor = Bg, Margin = Padding.Empty, AutoScroll = true
 		};
 		for (int i = 0; i < 3; i++) grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.3333f));
-		for (int i = 0; i < 2; i++) grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
-		AddCard(0, 0, "AUTO TURNING", () => $"Ativação: {string.Join(" / ", _config.Live.TurnActivationKeys)}\nTeclas e tempos de giro", ConfigureKeys);
-		AddCard(1, 0, "AUTO CAST TURN", () => $"Janela: {_config.AutoCastTurn.LeadTimeMs} ms\nJutsus excluídos: {_config.AutoCastTurn.ExcludedSpellIds.Length}", ConfigureCastTurn);
-		AddCard(2, 0, "SUBPUNISH", () => $"Combo: {string.Join(" → ", _config.Live.PunishKeys)}\nModo: {_config.Live.PunishMode}", ConfigureKeys);
-		AddCard(0, 1, "AA + TOOL", () => $"AA: {_config.CombatAssist.AttackMode} · {_config.CombatAssist.AttackKey}\nTool: {_config.CombatAssist.ToolKey} · {_config.CombatAssist.ToolRange:0.#} tiles", ConfigureCombat);
-		AddCard(1, 1, "AUTO FOLLOW", () => $"Segurar: {_config.CombatAssist.FollowHoldKey}\nParar: {_config.CombatAssist.FollowStopDistance:0.#} tiles", ConfigureCombat);
-		AddCard(2, 1, "AUTO STAMINA", () => $"Desligar <{_config.CombatAssist.StaminaDisableBelowPercent}% · religar >{_config.CombatAssist.StaminaEnableAbovePercent}%\nRun: {(_ctx?.StaminaBindingValid == true ? "validado" : "verifique tecla / modo")}", ConfigureCombat);
+		for (int i = 0; i < 3; i++) grid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.3333f));
+		AddCard(0, 0, "AUTO TURNING", () => $"Ativação: {string.Join(" / ", _config.Live.TurnActivationKeys)}\nTeclas de giro", () => ConfigureModule(ModuleSettingsFeature.AutoTurning));
+		AddCard(1, 0, "AUTO CAST TURN", () => $"{_config.AutoCastTurn.TargetMode} · {_config.AutoCastTurn.LeadTimeMs} ms\nExcluídos: {_config.AutoCastTurn.ExcludedSpellIds.Length}", ConfigureCastTurn);
+		AddCard(2, 0, "SUBPUNISH", () => $"Combo: {string.Join(" → ", _config.Live.PunishKeys)}\nModo: {_config.Live.PunishMode}", () => ConfigureModule(ModuleSettingsFeature.SubPunish));
+		AddCard(0, 1, "AUTO AA", () => $"{_config.CombatAssist.AttackMode} · {_config.CombatAssist.AttackKey}\nRaio: {_config.CombatAssist.WeaponRadius:0.#} tiles", () => ConfigureModule(ModuleSettingsFeature.AutoAttack));
+		AddCard(1, 1, "AUTO TOOL", () => $"{_config.CombatAssist.ToolKey} · {_config.CombatAssist.ToolRange:0.#} tiles\nIntervalo: {_config.CombatAssist.ToolIntervalMs} ms", () => ConfigureModule(ModuleSettingsFeature.Tool));
+		AddCard(2, 1, "AUTO FOLLOW", () => $"Segurar: {_config.CombatAssist.FollowHoldKey}\nParar: {_config.CombatAssist.FollowStopDistance:0.#} tiles", () => ConfigureModule(ModuleSettingsFeature.Follow));
+		AddCard(0, 2, "AUTO STAMINA", () => $"Desligar <{_config.CombatAssist.StaminaDisableBelowPercent}% · religar >{_config.CombatAssist.StaminaEnableAbovePercent}%\nRun: {(_ctx?.StaminaBindingValid == true ? "validado" : "verifique tecla / modo")}", () => ConfigureModule(ModuleSettingsFeature.Stamina));
+		AddCard(1, 2, "AUTO TARGET", () => $"Memória experimental · raio: {_config.AutoTarget.RadiusTiles:0.#} tiles\nIgnorar própria vila: {(_config.AutoTarget.IgnoreSameVillage ? "sim" : "não")}", ConfigureAutoTarget);
 		return grid;
 
 		void AddCard(int column, int row, string title, Func<string> summary, Action configure)
@@ -1242,12 +1268,13 @@ public sealed class Form1 : Form
 		bool flag3 = Allowed(AppFeature.Tool) && Approved(LiveInputKind.Tool);
 		_btnAutoTurning.Enabled = flag && Allowed(AppFeature.AutoTurning) && Approved(LiveInputKind.Turning);
 		_btnSubPunish.Enabled = flag && Allowed(SubFeature) && Approved(LiveInputKind.Punish);
-		Button btnCombat = _btnCombat;
-		bool enabled2 = flag && (flag2 || flag3);
-		btnCombat.Enabled = enabled2;
+		_btnCombat.Enabled = flag && flag2 && Approved(LiveInputKind.Attack);
+		_btnTool.Enabled = flag && flag3;
 		_btnFollow.Enabled = flag && Allowed(AppFeature.Follow) && Approved(LiveInputKind.Follow);
 		_btnStamina.Enabled = flag && Allowed(AppFeature.Stamina) && Approved(LiveInputKind.Stamina);
 		_btnCastTurn.Enabled = flag && Allowed(AppFeature.AutoCastTurn) && Approved(LiveInputKind.CastTurning) && (object)profile?.CastTiming != null;
+		_btnCastTurn.Enabled &= _config.AutoCastTurn.TargetMode != CastTurnTargetMode.Nearest || Allowed(AppFeature.MapPlayers);
+		_btnAutoTarget.Enabled = flag && Allowed(AppFeature.AutoTarget) && Allowed(AppFeature.MapPlayers) && Approved(LiveInputKind.TargetMemory);
 		_inspectionButton.Enabled = Allowed(AppFeature.ResourceInspection);
 		_account.Text = _session.Email + " · " + _session.Status;
 		bool Approved(LiveInputKind kind)
@@ -1277,10 +1304,12 @@ public sealed class Form1 : Form
 		{
 			_ctx.SetAutoTurningEnabled(enabled: false);
 			_ctx.SetSubPunishEnabled(enabled: false);
-			_ctx.SetCombatEnabled(enabled: false);
+			_ctx.SetAttackEnabled(false);
+			_ctx.SetToolEnabled(false);
 			_ctx.SetFollowEnabled(enabled: false);
 			_ctx.SetStaminaEnabled(enabled: false);
 			_ctx.SetCastTurnEnabled(enabled: false);
+			_ctx.SetAutoTargetEnabled(enabled: false);
 			_ctx.MemoryLog.EntryLogged -= OnLogEntry;
 			_ctx.Dispose();
 			_ctx = null;
@@ -1288,13 +1317,15 @@ public sealed class Form1 : Form
 		Button btnAutoTurning = _btnAutoTurning;
 		Button btnSubPunish = _btnSubPunish;
 		Button btnCombat = _btnCombat;
+		Button btnTool = _btnTool;
 		Button btnFollow = _btnFollow;
 		object obj = (_btnStamina.Tag = false);
 		object obj3 = (btnFollow.Tag = obj);
-		object obj5 = (btnCombat.Tag = obj3);
+		object obj5 = (btnCombat.Tag = (btnTool.Tag = obj3));
 		object tag = (btnSubPunish.Tag = obj5);
 		btnAutoTurning.Tag = tag;
 		_btnCastTurn.Tag = false;
+		_btnAutoTarget.Tag = false;
 		RefreshModuleButtons();
 		RefreshModeBadge();
 		RefreshSettingsSummaries();
@@ -1331,41 +1362,16 @@ public sealed class Form1 : Form
 		RefreshStatus();
 	}
 
-	private void ConfigureKeys()
+	private void ConfigureModule(ModuleSettingsFeature feature)
 	{
 		EmergencyStop();
-		using KeySettingsForm keySettingsForm = new KeySettingsForm(_config.Live);
-		if (keySettingsForm.ShowDialog(this) == DialogResult.OK)
-		{
-			AutoAssistConfig autoAssistConfig = _config with
-			{
-				Live = keySettingsForm.Settings
-			};
-			try
-			{
-				ConfigLoader.Save(SettingsPath, autoAssistConfig);
-			}
-			catch (Exception ex)
-			{
-				AppendLog(LogLevel.Error, "Não foi possível salvar: " + ex.Message, null);
-				return;
-			}
-			_config = autoAssistConfig;
-			ConnectToGame();
-			AppendLog(LogLevel.Info, "Teclas salvas/aplicadas; módulos OFF.", EventOrigin.Requested);
-		}
-	}
-
-	private void ConfigureCombat()
-	{
-		EmergencyStop();
-		using CombatAssistForm combatAssistForm = new CombatAssistForm(_config.CombatAssist);
-		if (combatAssistForm.ShowDialog(this) == DialogResult.OK)
+		using ModuleSettingsForm form = new ModuleSettingsForm(feature, _config.Live, _config.CombatAssist);
+		if (form.ShowDialog(this) == DialogResult.OK)
 		{
 			AutoAssistConfig config = _config with
 			{
-				CombatAssist = combatAssistForm.Settings,
-				Live = _config.Live with
+				CombatAssist = form.CombatSettings,
+				Live = form.LiveSettings with
 				{
 					AllowCounterAttackSequence = false
 				}
@@ -1381,7 +1387,7 @@ public sealed class Form1 : Form
 			}
 			_config = config;
 			ConnectToGame();
-			AppendLog(LogLevel.Info, "AA/Tool/Follow salvos; módulos OFF e permissões revogadas.", EventOrigin.Requested);
+			AppendLog(LogLevel.Info, $"{feature} salvo; módulos OFF e autorizações revogadas.", EventOrigin.Requested);
 		}
 	}
 
@@ -1407,6 +1413,22 @@ public sealed class Form1 : Form
 			_config = config;
 			ConnectToGame();
 		}
+	}
+
+	private void ConfigureAutoTarget()
+	{
+		EmergencyStop();
+		using AutoTargetForm form = new AutoTargetForm(_config.AutoTarget);
+		if (form.ShowDialog(this) != DialogResult.OK) return;
+		AutoAssistConfig next = _config with { AutoTarget = form.Settings };
+		try { ConfigLoader.Save(SettingsPath, next); }
+		catch (Exception ex)
+		{
+			AppendLog(LogLevel.Error, "Não foi possível salvar: " + ex.Message, null);
+			return;
+		}
+		_config = next;
+		ConnectToGame();
 	}
 
 	private void ToggleAutoTurning()
@@ -1455,11 +1477,10 @@ public sealed class Form1 : Form
 	{
 		RefreshModuleButton(_btnAutoTurning, "AUTO TURNING");
 		RefreshModuleButton(_btnCastTurn, "AUTO CAST TURN");
+		RefreshModuleButton(_btnAutoTarget, "AUTO TARGET");
 		RefreshModuleButton(_btnSubPunish, "SUBPUNISH TAI/ÁGUA");
-		GameMemoryProfile gameMemoryProfile = _ctx?.Provider?.Profile;
-		bool flag = Allowed(AppFeature.AutoAttack) && LocalTrialPolicy.CanActuate(gameMemoryProfile) && gameMemoryProfile.ApprovesAttackMode(_config.CombatAssist.AttackMode.ToString());
-		bool flag2 = Allowed(AppFeature.Tool) && LocalTrialPolicy.CanActuate(gameMemoryProfile) && (!gameMemoryProfile.ExternalProfile || gameMemoryProfile.ValidatedInputKinds.Contains<string>("Tool", StringComparer.Ordinal));
-		RefreshModuleButton(_btnCombat, (flag && flag2) ? "AA + TOOL" : (flag ? "AA (TOOL BLOQUEADO)" : (flag2 ? "TOOL (AA BLOQUEADO)" : "AA / TOOL BLOQUEADOS")));
+		RefreshModuleButton(_btnCombat, "AUTO AA");
+		RefreshModuleButton(_btnTool, "AUTO TOOL");
 		RefreshModuleButton(_btnFollow, "AUTO FOLLOW");
 		RefreshModuleButton(_btnStamina, "AUTO STAMINA");
 	}
@@ -1488,18 +1509,22 @@ public sealed class Form1 : Form
 		StopOverlay();
 		_ctx?.SetAutoTurningEnabled(enabled: false);
 		_ctx?.SetSubPunishEnabled(enabled: false);
-		_ctx?.SetCombatEnabled(enabled: false);
+		_ctx?.SetAttackEnabled(false);
+		_ctx?.SetToolEnabled(false);
 		_ctx?.SetFollowEnabled(enabled: false);
 		_ctx?.SetStaminaEnabled(enabled: false);
 		_ctx?.SetCastTurnEnabled(enabled: false);
+		_ctx?.SetAutoTargetEnabled(enabled: false);
 		_btnAutoTurning.Tag = false;
 		_btnSubPunish.Tag = false;
 		Button btnCombat = _btnCombat;
+		Button btnTool = _btnTool;
 		Button btnFollow = _btnFollow;
 		object obj = (_btnStamina.Tag = false);
 		object tag = (btnFollow.Tag = obj);
-		btnCombat.Tag = tag;
+		btnCombat.Tag = (btnTool.Tag = tag);
 		_btnCastTurn.Tag = false;
+		_btnAutoTarget.Tag = false;
 		LiveInputController.AcknowledgeEmergencyAfterDisarm();
 		RefreshModuleButtons();
 		AppendLog(LogLevel.Warning, "PARADA DE EMERGÊNCIA acionada — módulos desativados", EventOrigin.Requested);
@@ -1818,6 +1843,11 @@ public sealed class Form1 : Form
 		goto IL_04de;
 		IL_04de:
 		lblCastTurn.Text = (string)text3;
+		_lblAutoTarget.Text = !Allowed(AppFeature.MapPlayers)
+			? "Lista de jogadores não autorizada pelo Firebase (MapPlayers)"
+			: !Allowed(AppFeature.AutoTarget) || _ctx?.Provider?.Profile is { ExternalProfile: true } targetProfile && !targetProfile.ValidatedInputKinds.Contains("TargetMemory", StringComparer.Ordinal)
+				? "Somente leitura: " + (NearestTargetPolicy.Resolve(_ctx?.Frame, _config.AutoTarget.RadiusTiles, _config.AutoTarget.IgnoreSameVillage)?.Id ?? "nenhum candidato seguro") + " · input não autorizado"
+				: _ctx?.AutoTargetStatus ?? "Desconectado";
 		RefreshPlayers();
 	}
 
