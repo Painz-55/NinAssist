@@ -25,5 +25,6 @@
     <ProjectReference Include="..\..\src\NinOnlineAutoAssist.Simulation\NinOnlineAutoAssist.Simulation.csproj" />
     <ProjectReference Include="..\..\src\Modern\Diagnostics\ModernDiagnostics.csproj" />
     <ProjectReference Include="..\..\src\Modern\Live\ModernLive.csproj" />
+    <ProjectReference Include="..\..\src\Modern\App\NinOnlineAutoAssist.App.csproj" />
   </ItemGroup>
 </Project>

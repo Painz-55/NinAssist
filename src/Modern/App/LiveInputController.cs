@@ -31,6 +31,20 @@ internal sealed class LiveInputController : IOrientationController, IActionExecu
 		[FieldOffset(0)]
 		public KeyboardInput Keyboard;
 
+		// INPUT's native union must reserve MOUSEINPUT's full size even when we
+		// dispatch only keyboard events. On x64 this makes INPUT 40, not 32 bytes.
+		[FieldOffset(0)]
+		public MouseInput Mouse;
+	}
+
+	private struct MouseInput
+	{
+		public int X;
+		public int Y;
+		public uint MouseData;
+		public uint Flags;
+		public uint Time;
+		public nuint ExtraInfo;
 	}
 
 	private struct KeyboardInput
