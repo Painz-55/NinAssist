@@ -87,8 +87,23 @@ public static class SignedProfileCatalog
                 throw new InvalidOperationException("Invalid approved input list");
             if (actions.EnumerateArray().Select(a => a.GetString()).Distinct().Count() != actions.GetArrayLength())
                 throw new InvalidOperationException("Duplicate approved input kind");
+            var targetTrial = trial && gameHash == "8A163FC3D8FA13CCB3AA1FBABD9D1EBA1C829FBAE4ED14CC05AC688CAD328D50" &&
+                commonHash == "43B99E8E93F063DFA1239978C7B41C51520E765CAB8D21499160FCA14CD01F62" &&
+                (actions.GetArrayLength() == 1 && actions[0].GetString() == "TargetMemory" &&
+                 element.GetProperty("PunishComboValidated").GetBoolean() == false &&
+                 element.GetProperty("ValidatedAttackModes").GetArrayLength() == 0 ||
+                 actions.GetArrayLength() == 8 &&
+                 actions.EnumerateArray().Select(a => a.GetString()).SequenceEqual(new[] { "Turning", "Punish", "Attack", "Tool", "Follow", "Stamina", "CastTurning", "TargetMemory" }) &&
+                 element.GetProperty("PunishComboValidated").GetBoolean() && element.GetProperty("PunishComboRequiresTarget").GetBoolean() &&
+                 element.GetProperty("ValidatedAttackModes").EnumerateArray().Select(a => a.GetString()).SequenceEqual(new[] { "Melee", "Fan" })) &&
+                selected.ValueKind == JsonValueKind.Object &&
+                selected.GetProperty("GlobalObject").GetString() == "F3miMmd6RE4" &&
+                selected.GetProperty("Kind").GetString() == "dxFYxym9RQk" &&
+                selected.GetProperty("Index").GetString() == "okyYx7CwjXs";
+            if (trial && gameHash == "8A163FC3D8FA13CCB3AA1FBABD9D1EBA1C829FBAE4ED14CC05AC688CAD328D50" && !targetTrial)
+                throw new InvalidOperationException("Current build trial restricted to exact target input");
             if (actions.EnumerateArray().Any(a => a.GetString() == "TargetMemory") &&
-                (gameHash != "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634" ||
+                (gameHash != "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634" && !targetTrial ||
                  selected.ValueKind != JsonValueKind.Object || selected.GetProperty("PlayerKind").GetInt32() != 1))
                 throw new InvalidOperationException("TargetMemory requires validated build and player schema");
             if (!element.GetProperty("ActuationValidated").GetBoolean() && !trial && actions.GetArrayLength() != 0)

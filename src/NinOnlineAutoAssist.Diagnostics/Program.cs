@@ -8,6 +8,13 @@ using NinOnlineAutoAssist.Core.Abstractions;
 
 // Measures scheduling only. No game attachment and no keyboard input is sent.
 if (args.Length == 1 && args[0] == "--response-timing") return ResponseTimingProbe.Run();
+if (args.Length == 4 && args[0] == "--run-boolean-snapshot" && int.TryParse(args[1], out var runSnapshotPid))
+    return RunBooleanSnapshot.Run(runSnapshotPid, args[2], args[3]);
+if (args.Length == 4 && args[0] == "--target-layout-snapshot" && int.TryParse(args[1], out var targetLayoutPid))
+    return TargetLayoutSnapshot.Run(targetLayoutPid, args[2], args[3]);
+if (args.Length == 5 && args[0] == "--target-layout-watch" && int.TryParse(args[1], out var targetWatchPid) &&
+    int.TryParse(args[4], out var targetWatchSeconds))
+    return TargetLayoutSnapshot.Run(targetWatchPid, args[2], args[3], targetWatchSeconds);
 if (args.Length == 5 && args[0] == "--raw-buff-watch" && int.TryParse(args[1], out var rawBuffPid) &&
     int.TryParse(args[4], out var buffSeconds)) return RawBuffWatch.Run(rawBuffPid, args[2], args[3], buffSeconds);
 if (args.Length == 5 && args[0] == "--raw-target-transition-watch" && int.TryParse(args[1], out var rawTargetPid) &&

@@ -510,4 +510,35 @@ public sealed class SignedProfileCatalogTests
                 p.Sha256, p.CommonSha256);
         });
     }
+
+    [Fact]
+    public void CurrentBuildTrialCanOnlySignTheExactTargetInput()
+    {
+        var p = GameMemoryProfile.Updated20261104 with
+        {
+            Id = "LOCAL TRIAL Raizen TargetMemory",
+            Sha256 = "8A163FC3D8FA13CCB3AA1FBABD9D1EBA1C829FBAE4ED14CC05AC688CAD328D50",
+            CommonSha256 = "43B99E8E93F063DFA1239978C7B41C51520E765CAB8D21499160FCA14CD01F62",
+            ExperimentalTrial = true, ActuationValidated = false,
+            ValidatedInputKinds = ["TargetMemory"], ValidatedAttackModes = [], PunishComboValidated = false,
+            SelectedIndex = null,
+            SelectedTarget = new("F3miMmd6RE4", "dxFYxym9RQk", "okyYx7CwjXs", 1)
+        };
+        GameMemoryProfile? Select(GameMemoryProfile profile)
+        {
+            var signed = Sign(new { schema = 1, profiles = new[] { profile } });
+            return SignedProfileCatalog.VerifyAndSelect(signed.Payload, signed.Signature, signed.PublicKey,
+                p.Sha256, p.CommonSha256);
+        }
+        Assert.NotNull(Select(p));
+        Assert.Throws<InvalidOperationException>(() => Select(p with { ValidatedInputKinds = ["TargetMemory", "Attack"] }));
+        Assert.Throws<InvalidOperationException>(() => Select(p with { SelectedTarget = p.SelectedTarget! with { Index = "other" } }));
+        Assert.Throws<InvalidOperationException>(() => Select(p with { ExperimentalTrial = false }));
+        Assert.Throws<InvalidOperationException>(() => Select(p with { ActuationValidated = true }));
+        var integrated = p with { ValidatedInputKinds = ["Turning", "Punish", "Attack", "Tool", "Follow", "Stamina", "CastTurning", "TargetMemory"],
+            ValidatedAttackModes = ["Melee", "Fan"], PunishComboValidated = true, PunishComboRequiresTarget = true };
+        Assert.NotNull(Select(integrated));
+        Assert.Throws<InvalidOperationException>(() => Select(integrated with { ValidatedAttackModes = ["Melee", "Fan", "HisuyFan"] }));
+        Assert.Throws<InvalidOperationException>(() => Select(integrated with { PunishComboRequiresTarget = false }));
+    }
 }

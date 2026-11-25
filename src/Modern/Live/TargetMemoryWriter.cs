@@ -14,6 +14,11 @@ namespace NinOnlineAutoAssist.Live;
 public sealed class TargetMemoryWriter : IDisposable
 {
 	private bool _faulted;
+	private int _trialWriteCount;
+	private long _trialWriteFrameAt;
+	private string? _trialSelectedId;
+	private string? _trialLocalId;
+	private bool _trialFirstConfirmed;
 	private Process? _process;
 	private DataTarget? _target;
 	private ClrRuntime? _runtime;
@@ -23,6 +28,8 @@ public sealed class TargetMemoryWriter : IDisposable
 	private string? _commonHash;
 	private const uint VmOperation = 0x0008, VmRead = 0x0010, VmWrite = 0x0020;
 	private const string TestedHash = "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634";
+	private const string TrialHash = "8A163FC3D8FA13CCB3AA1FBABD9D1EBA1C829FBAE4ED14CC05AC688CAD328D50";
+	private const string TrialCommonHash = "43B99E8E93F063DFA1239978C7B41C51520E765CAB8D21499160FCA14CD01F62";
 
 	[DllImport("kernel32.dll", SetLastError = true)]
 	private static extern nint OpenProcess(uint access, bool inherit, int pid);
@@ -36,12 +43,30 @@ public sealed class TargetMemoryWriter : IDisposable
 	public ActionResult Select(int pid, GameMemoryProfile profile, LiveFrame frame, TargetInfo candidate, Func<bool> gate)
 	{
 		if (_faulted) return ActionResult.Rejected("Falha de escrita anterior; reconecte antes de tentar novamente");
+		bool trial = profile is { ExternalProfile: true, ExperimentalTrial: true, ActuationValidated: false } &&
+			profile.Id.StartsWith("LOCAL TRIAL ", StringComparison.Ordinal) &&
+			profile.Sha256 == TrialHash && profile.CommonSha256 == TrialCommonHash &&
+			(profile.ValidatedInputKinds.SequenceEqual([nameof(LiveInputKind.TargetMemory)]) &&
+			 profile.ValidatedAttackModes.Length == 0 && profile.PunishComboValidated == false ||
+			 profile.ValidatedInputKinds.SequenceEqual(["Turning", "Punish", "Attack", "Tool", "Follow", "Stamina", "CastTurning", "TargetMemory"]) &&
+			 profile.ValidatedAttackModes.SequenceEqual(["Melee", "Fan"]) &&
+			 profile.PunishComboValidated == true && profile.PunishComboRequiresTarget == true) &&
+			profile.SelectedTarget is { GlobalObject: "F3miMmd6RE4", Kind: "dxFYxym9RQk", Index: "okyYx7CwjXs", PlayerKind: 1 };
 		if (profile is null || frame is null || candidate is null || gate is null ||
-			!profile.ExternalProfile || !profile.ActuationValidated ||
+			!profile.ExternalProfile || !(profile.ActuationValidated && !profile.ExperimentalTrial || trial) ||
 			!profile.ValidatedInputKinds.Contains(nameof(LiveInputKind.TargetMemory), StringComparer.Ordinal) ||
-			!profile.Sha256.Equals(TestedHash, StringComparison.OrdinalIgnoreCase) ||
+			!(profile.Sha256.Equals(TestedHash, StringComparison.OrdinalIgnoreCase) || trial) ||
 			profile.SelectedTarget is not { PlayerKind: 1 } fields || IntPtr.Size != 8 || !gate())
 			return ActionResult.Rejected("Build, perfil ou autorização de escrita inválidos");
+		if (trial && (frame.Map != 190 || frame.PlayerName != "Raizen Kaen" ||
+			frame.Snapshot.Player.Id.Split(':').LastOrDefault() != "Raizen Kaen"))
+			return ActionResult.Rejected("Ensaio local restrito a Raizen no mapa 190");
+		if (trial && (_trialWriteCount >= 2 || _trialWriteCount == 1 && !_trialFirstConfirmed))
+			return ActionResult.Rejected("Ensaio local aguardando confirmação ou limite de duas escritas atingido");
+		if (trial && _trialWriteCount == 1 && frame.Snapshot.Target is not null)
+			return ActionResult.Rejected("Ensaio exige alvo limpo por Esc após confirmação da primeira escrita");
+		if (trial && _trialWriteCount == 1 && candidate.Id != _trialSelectedId)
+			return ActionResult.Rejected("Segundo ensaio restrito ao mesmo jogador confirmado");
 		if (frame.Map <= 0 || !frame.Snapshot.Player.IsAlive || frame.MapPlayers is not { UnreadableSlots: 0 } map ||
 			map.Map != frame.Map || map.LocalId != frame.Snapshot.Player.Id ||
 			frame.CapturedAtMs < map.CapturedAtMs || frame.CapturedAtMs - map.CapturedAtMs > 500)
@@ -117,18 +142,38 @@ public sealed class TargetMemoryWriter : IDisposable
 			int indexOffset = selected.Type.GetFieldByName(fields.Index)!.Offset;
 			if (kindOffset != 0 || indexOffset != sizeof(int))
 				return ActionResult.Rejected("Campos do alvo não são contíguos");
+			if (trial && (selected.Type.GetFieldByName("KZxYx3XP1Gd")?.Offset != 8 ||
+				selected.Type.GetFieldByName("MCWYxSJiKSc")?.Offset != 12 ||
+				selected.Type.GetFieldByName("KZxYx3XP1Gd")?.Type?.Name != "System.Int32" ||
+				selected.Type.GetFieldByName("MCWYxSJiKSc")?.Type?.Name != "System.Int32"))
+				return ActionResult.Rejected("Layout do histórico do alvo mudou");
 			// ClrMD's instance offsets start after the 8-byte method-table pointer on x64.
 			ulong kindAddress = selected.Address + (ulong)IntPtr.Size;
 			{
-				byte[] before = new byte[8];
-				if (!ReadProcessMemory(_handle, (nint)kindAddress, before, 8, out nuint read) || read != 8 ||
+				int length = trial ? 16 : 8;
+				byte[] before = new byte[length];
+				if (!ReadProcessMemory(_handle, (nint)kindAddress, before, (nuint)length, out nuint read) || read != (nuint)length ||
 					BitConverter.ToInt32(before, 0) != selected.ReadField<int>(fields.Kind) ||
 					BitConverter.ToInt32(before, 4) != selected.ReadField<int>(fields.Index) ||
+					(trial && (BitConverter.ToInt32(before, 8) != selected.ReadField<int>("KZxYx3XP1Gd") ||
+						BitConverter.ToInt32(before, 12) != selected.ReadField<int>("MCWYxSJiKSc"))) ||
 					selectedField.ReadObject(domain).Address != selected.Address || !gate())
 					return ActionResult.Rejected("Alvo ou autorização mudou antes da escrita");
+				if (trial && (frame.Snapshot.Target?.Id is { } currentId && currentId !=
+					$"{BitConverter.ToInt32(before, 4)}:{frame.TargetName}" ||
+					BitConverter.ToInt32(before, 0) is not (0 or 1) ||
+					(BitConverter.ToInt32(before, 0) == 0 && BitConverter.ToInt32(before, 4) != 0)))
+					return ActionResult.Rejected("Estado do alvo não confiável para ensaio");
 				byte[] desired = new byte[8];
 				BitConverter.GetBytes(fields.PlayerKind).CopyTo(desired, 0);
 				BitConverter.GetBytes(matches[0].Slot).CopyTo(desired, 4);
+				if (trial)
+				{
+					_trialWriteCount++;
+					_trialWriteFrameAt = frame.CapturedAtMs;
+					_trialSelectedId = candidate.Id;
+					_trialLocalId = frame.Snapshot.Player.Id;
+				}
 				writeStarted = true;
 				if (!WriteProcessMemory(_handle, (nint)kindAddress, desired, 8, out nuint written) || written != 8)
 				{
@@ -142,6 +187,12 @@ public sealed class TargetMemoryWriter : IDisposable
 					_faulted = true;
 					return ActionResult.Rejected("Confirmação imediata falhou; desative e reconecte");
 				}
+				if (trial && (selected.ReadField<int>("KZxYx3XP1Gd") != BitConverter.ToInt32(before, 8) ||
+					selected.ReadField<int>("MCWYxSJiKSc") != BitConverter.ToInt32(before, 12)))
+				{
+					_faulted = true;
+					return ActionResult.Rejected("Histórico do alvo mudou; reconecte");
+				}
 				return ActionResult.Ok("Campos escritos; aguardando leitura posterior do alvo no cliente");
 			}
 		}
@@ -150,6 +201,21 @@ public sealed class TargetMemoryWriter : IDisposable
 			if (writeStarted) _faulted = true;
 			return ActionResult.Rejected("Escrita bloqueada: " + ex.GetType().Name + (_faulted ? "; reconecte" : ""));
 		}
+	}
+
+	/// <summary>Only an independent later provider frame can arm the second local-trial write.</summary>
+	public void ObserveTrialFrame(LiveFrame? frame)
+	{
+		if (_trialWriteCount != 1 || _trialFirstConfirmed || frame is null ||
+			frame.CapturedAtMs <= _trialWriteFrameAt || frame.Map != 190 ||
+			frame.PlayerName != "Raizen Kaen" || frame.Snapshot.Player.Id != _trialLocalId ||
+			frame.MapPlayers is not { UnreadableSlots: 0 } players ||
+			players.Map != frame.Map || players.LocalId != _trialLocalId ||
+			frame.CapturedAtMs < players.CapturedAtMs || frame.ReadDurationMs > 500 ||
+			frame.CapturedAtMs - players.CapturedAtMs > 500 ||
+			frame.Snapshot.Target is not { IsAlive: true, IsTargeted: true } target || target.Id != _trialSelectedId)
+			return;
+		_trialFirstConfirmed = true;
 	}
 
 	public void Dispose()

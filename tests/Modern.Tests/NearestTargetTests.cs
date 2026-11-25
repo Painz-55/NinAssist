@@ -90,6 +90,25 @@ public class NearestTargetTests
     }
 
     [Fact]
+    public void AutoTargetRequestsAgainAfterEscapeClearsConfirmedSelection()
+    {
+        var clock = new SimulatedClock(0);
+        var requested = new List<string>();
+        var engine = new AutoTargetEngine(clock, new AutoTargetSettings { MaxAttempts = 2, AttemptIntervalMs = 200 },
+            target => { requested.Add(target.Id); return ActionResult.Ok(); });
+        engine.Update(Frame(0), enabled: true, allowed: true, higherPriorityBusy: false);
+        Assert.Single(requested);
+        clock.Advance(250);
+        engine.Update(Frame(250, "4:Nearest"), enabled: true, allowed: true, higherPriorityBusy: false);
+        Assert.Contains("selecionado", engine.Status);
+        // The player presses Esc; a new frame with no selected target can re-arm the normal engine.
+        clock.Advance(250);
+        engine.Update(Frame(500), enabled: true, allowed: true, higherPriorityBusy: false);
+        Assert.Equal(2, requested.Count);
+        Assert.Equal("4:Nearest", requested[1]);
+    }
+
+    [Fact]
     public void SmartTargetOnlyRequestsWhileHeldAndPreservesLastSelectionOnRelease()
     {
         var settings = new SmartTargetSettings { RadiusTiles = 5, HoldKey = "Tab" };
@@ -167,6 +186,48 @@ public class NearestTargetTests
         Assert.False(writer.Select(-1, profile, frame, candidate, () => true).Accepted);
         Assert.False(writer.Select(-1, profile with { ExternalProfile = true }, frame, candidate, () => true).Accepted);
         Assert.False(writer.Select(-1, profile with { ExternalProfile = true, ValidatedInputKinds = ["TargetMemory"] }, frame, candidate, () => false).Accepted);
+    }
+
+    [Fact]
+    public void MemoryWriterRefusesCurrentFourIntegerBuildEvenWithClaimedApproval()
+    {
+        using var writer = new TargetMemoryWriter();
+        var frame = Frame(100);
+        var candidate = NearestTargetPolicy.Resolve(frame, 12, true)!;
+        var profile = new GameMemoryProfile
+        {
+            Id = "unapproved four-integer layout",
+            Sha256 = "8A163FC3D8FA13CCB3AA1FBABD9D1EBA1C829FBAE4ED14CC05AC688CAD328D50",
+            CommonSha256 = "43B99E8E93F063DFA1239978C7B41C51520E765CAB8D21499160FCA14CD01F62",
+            ExternalProfile = true,
+            ActuationValidated = true,
+            ValidatedInputKinds = ["TargetMemory"],
+            SelectedTarget = new SelectedTargetMemoryFields("F3miMmd6RE4", "dxFYxym9RQk", "okyYx7CwjXs", 1)
+        };
+        // Must reject before process attachment and before calling the dynamic authorization gate.
+        Assert.False(writer.Select(-1, profile, frame, candidate, () => throw new Exception("gate called")).Accepted);
+    }
+
+    [Fact]
+    public void LocalTargetTrialCannotEnableOtherInputsOrWrongBuild()
+    {
+        var profile = new GameMemoryProfile
+        {
+            Id = "LOCAL TRIAL Raizen TargetMemory",
+            Sha256 = "8A163FC3D8FA13CCB3AA1FBABD9D1EBA1C829FBAE4ED14CC05AC688CAD328D50",
+            CommonSha256 = "43B99E8E93F063DFA1239978C7B41C51520E765CAB8D21499160FCA14CD01F62",
+            ExternalProfile = true, ExperimentalTrial = true, ActuationValidated = false,
+            ValidatedInputKinds = ["TargetMemory"], ValidatedAttackModes = [], PunishComboValidated = false
+        };
+        Assert.True(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(profile));
+        Assert.False(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(profile with { ValidatedInputKinds = ["TargetMemory", "Attack"] }));
+        Assert.False(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(profile with { CommonSha256 = new string('0', 64) }));
+        Assert.False(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(profile with { ExperimentalTrial = false }));
+        Assert.False(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(profile with { Id = "Official" }));
+        var integrated = profile with { ValidatedInputKinds = ["Turning", "Punish", "Attack", "Tool", "Follow", "Stamina", "CastTurning", "TargetMemory"],
+            ValidatedAttackModes = ["Melee", "Fan"], PunishComboValidated = true, PunishComboRequiresTarget = true };
+        Assert.True(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(integrated));
+        Assert.False(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(integrated with { ValidatedAttackModes = ["Melee", "Fan", "HisuyFan"] }));
     }
 
 }

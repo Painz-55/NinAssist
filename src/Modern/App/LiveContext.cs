@@ -1412,6 +1412,7 @@ public sealed class LiveContext : IDisposable
 		{
 			_lastCastTurnDiagnostic = null;
 		}
+		_targetWriter?.ObserveTrialFrame(frame);
 		SafetyDecision autoTargetSafety = CheckSafety(LiveInputKind.TargetMemory);
 		AutoTarget?.Update(frame, _autoTargetEnabled, autoTargetSafety.Allowed, frame?.Cast?.Active == true || SubNeedsPriority);
 		AutoTargetStatus = (autoTargetSafety.Allowed ? (AutoTarget?.Status ?? "Indisponível") : autoTargetSafety.Reason);

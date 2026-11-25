@@ -192,8 +192,23 @@ public static class SignedProfileCatalog
 			{
 				throw new InvalidOperationException("Duplicate approved input kind");
 			}
+			bool targetTrial = flag4 && text == "8A163FC3D8FA13CCB3AA1FBABD9D1EBA1C829FBAE4ED14CC05AC688CAD328D50" &&
+				text2 == "43B99E8E93F063DFA1239978C7B41C51520E765CAB8D21499160FCA14CD01F62" &&
+				(property4.GetArrayLength() == 1 && property4[0].GetString() == "TargetMemory" &&
+				 item.GetProperty("PunishComboValidated").GetBoolean() == false &&
+				 item.GetProperty("ValidatedAttackModes").GetArrayLength() == 0 ||
+				 property4.GetArrayLength() == 8 &&
+				 property4.EnumerateArray().Select(a => a.GetString()).SequenceEqual(new[] { "Turning", "Punish", "Attack", "Tool", "Follow", "Stamina", "CastTurning", "TargetMemory" }) &&
+				 item.GetProperty("PunishComboValidated").GetBoolean() && item.GetProperty("PunishComboRequiresTarget").GetBoolean() &&
+				 item.GetProperty("ValidatedAttackModes").EnumerateArray().Select(a => a.GetString()).SequenceEqual(new[] { "Melee", "Fan" })) &&
+				property3.ValueKind == JsonValueKind.Object &&
+				property3.GetProperty("GlobalObject").GetString() == "F3miMmd6RE4" &&
+				property3.GetProperty("Kind").GetString() == "dxFYxym9RQk" &&
+				property3.GetProperty("Index").GetString() == "okyYx7CwjXs";
+			if (flag4 && text == "8A163FC3D8FA13CCB3AA1FBABD9D1EBA1C829FBAE4ED14CC05AC688CAD328D50" && !targetTrial)
+				throw new InvalidOperationException("Local trial restricted to exact TargetMemory build and fields");
 			if (property4.EnumerateArray().Any(a => a.GetString() == "TargetMemory") &&
-				(text != "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634" ||
+				(text != "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634" && !targetTrial ||
 				 property3.ValueKind != JsonValueKind.Object || property3.GetProperty("PlayerKind").GetInt32() != 1))
 				throw new InvalidOperationException("TargetMemory requires the validated exact game build and player schema");
 			if (!item.GetProperty("ActuationValidated").GetBoolean() && !flag4 && property4.GetArrayLength() != 0)
