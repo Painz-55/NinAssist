@@ -32,7 +32,7 @@ public static class RawActorMovementWatch
             var domain = runtime.AppDomains.Single();
             int slot = globals.GetStaticFieldByName("AID86bUe12D")!.Read<int>(domain);
             var players = root.GetStaticFieldByName("IEVwmvVWoet")!.ReadObject(domain).AsArray();
-            if (slot != 37 || slot >= players.Length) throw new InvalidOperationException("Local slot changed");
+            if (slot <= 0 || slot >= players.Length) throw new InvalidOperationException("Local slot invalid");
             var actor = players.GetObjectValue(slot);
             if (actor.IsNull || actor.ReadStringField("K337309iOKN", 64) != character)
                 throw new InvalidOperationException("Local character changed");
@@ -47,6 +47,7 @@ public static class RawActorMovementWatch
                         "System.Double" => field.Read<double>(actor.Address, false),
                         "System.Int32" => field.Read<int>(actor.Address, false),
                         "System.Byte" => field.Read<byte>(actor.Address, false),
+                        "System.Boolean" => field.Read<bool>(actor.Address, false) ? 1 : 0,
                         _ => double.NaN
                     };
                     if (double.IsFinite(value) && Math.Abs(value) < 10_000_000) current[field.Name!] = value;

@@ -32,7 +32,7 @@ public static class RawTargetTransitionWatch
             var domain = runtime.AppDomains.Single();
             var slot = globals.GetStaticFieldByName("AID86bUe12D")!.Read<int>(domain);
             var players = root.GetStaticFieldByName("IEVwmvVWoet")!.ReadObject(domain).AsArray();
-            if (slot != 37 || slot >= players.Length ||
+            if (slot <= 0 || slot >= players.Length ||
                 players.GetObjectValue(slot).ReadStringField("K337309iOKN", 64) != character)
                 throw new InvalidOperationException("Local identity changed during survey");
             var states = fields.Select(name =>
