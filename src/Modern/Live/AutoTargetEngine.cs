@@ -16,6 +16,7 @@ public sealed class AutoTargetEngine
 	private readonly AutoTargetSettings _settings;
 
 	private readonly Func<TargetInfo, ActionResult> _select;
+	private readonly string _label;
 
 	private long? _lastAttemptAt;
 
@@ -25,12 +26,13 @@ public sealed class AutoTargetEngine
 
 	public string Status { get; private set; } = "Auto Target OFF";
 
-	public AutoTargetEngine(IMonotonicClock clock, AutoTargetSettings settings, Func<TargetInfo, ActionResult> select)
+	public AutoTargetEngine(IMonotonicClock clock, AutoTargetSettings settings, Func<TargetInfo, ActionResult> select, string label = "Auto Target")
 	{
 		settings.Validate();
 		_clock = clock;
 		_settings = settings;
 		_select = select;
+		_label = label;
 	}
 
 	public void Reset()
@@ -45,37 +47,37 @@ public sealed class AutoTargetEngine
 		if (!enabled)
 		{
 			Reset();
-			Status = "Auto Target OFF";
+			Status = _label + " OFF";
 			return;
 		}
 		if (!allowed)
 		{
 			Reset();
-			Status = "Auto Target: bloqueado pela checagem de segurança";
+			Status = _label + ": bloqueado pela checagem de segurança";
 			return;
 		}
 		if (frame is null)
 		{
-			Status = "Auto Target: leitura indisponível";
+			Status = _label + ": leitura indisponível";
 			return;
 		}
 		TargetInfo? nearest = NearestTargetPolicy.Resolve(frame, _settings.RadiusTiles, _settings.IgnoreSameVillage);
 		if (nearest is null)
 		{
 			Reset();
-			Status = $"Auto Target: nenhum jogador vivo até {_settings.RadiusTiles:0.#} tiles";
+			Status = $"{_label}: nenhum jogador vivo até {_settings.RadiusTiles:0.#} tiles";
 			return;
 		}
 		TargetInfo? selected = frame.Snapshot.Target;
 		if (selected is { IsAlive: true, IsTargeted: true } && selected.Id == nearest.Id)
 		{
 			Reset();
-			Status = $"Auto Target: mais próximo selecionado ({nearest.Id})";
+			Status = $"{_label}: mais próximo selecionado ({nearest.Id})";
 			return;
 		}
 		if (higherPriorityBusy)
 		{
-			Status = "Auto Target: aguardando prioridade do cast/combo";
+			Status = _label + ": aguardando prioridade do cast/combo";
 			return;
 		}
 		if (!string.Equals(_attemptTarget, nearest.Id, StringComparison.Ordinal))
@@ -86,7 +88,7 @@ public sealed class AutoTargetEngine
 		}
 		if (_attempts >= _settings.MaxAttempts)
 		{
-			Status = $"Auto Target: {nearest.Id} não confirmado após {_attempts} tentativa(s); sem nova tentativa";
+			Status = $"{_label}: {nearest.Id} não confirmado após {_attempts} tentativa(s); sem nova tentativa";
 			return;
 		}
 		long nowMs = _clock.NowMs;
@@ -96,14 +98,14 @@ public sealed class AutoTargetEngine
 		}
 		if (_lastAttemptAt.HasValue && frame.CapturedAtMs <= _lastAttemptAt.Value)
 		{
-			Status = "Auto Target: aguardando leitura nova após a escrita";
+			Status = _label + ": aguardando leitura nova após a escrita";
 			return;
 		}
 		_lastAttemptAt = nowMs;
 		_attempts++;
 		ActionResult result = _select(nearest);
 		Status = (result.Accepted
-			? $"Auto Target: escrita {_attempts}/{_settings.MaxAttempts} em {nearest.Id}; aguardando confirmação pela leitura"
-			: ("Auto Target: escrita recusada — " + result.Reason));
+			? $"{_label}: escrita {_attempts}/{_settings.MaxAttempts} em {nearest.Id}; aguardando confirmação pela leitura"
+			: (_label + ": escrita recusada — " + result.Reason));
 	}
 }

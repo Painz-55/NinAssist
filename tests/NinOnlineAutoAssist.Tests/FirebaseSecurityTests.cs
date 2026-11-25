@@ -63,6 +63,17 @@ public sealed class FirebaseSecurityTests
     }
 
     [Fact]
+    public void SmartTargetNeedsItsOwnExactFirebasePermission()
+    {
+        var autoOnly = Parse("""{"fields":{"enabled":{"booleanValue":true},"features":{"mapValue":{"fields":{"AutoTarget":{"booleanValue":true},"MapPlayers":{"booleanValue":true}}}}}}""");
+        Assert.True(autoOnly.Allows(AppFeature.AutoTarget));
+        Assert.False(autoOnly.Allows(AppFeature.SmartTarget));
+        var smartOnly = Parse("""{"fields":{"enabled":{"booleanValue":true},"features":{"mapValue":{"fields":{"SmartTarget":{"booleanValue":true},"MapPlayers":{"booleanValue":true}}}}}}""");
+        Assert.True(smartOnly.Allows(AppFeature.SmartTarget));
+        Assert.False(smartOnly.Allows(AppFeature.AutoTarget));
+    }
+
+    [Fact]
     public void LeaseExpiresMonotonicallyAndSlowRequestsDoNotExtendIt()
     {
         var clock = new SimulatedClock(0); var access = new AccessLease(clock);

@@ -11,9 +11,16 @@ using NinOnlineAutoAssist.Core.Models;
 namespace NinOnlineAutoAssist.Live;
 
 /// <summary>Experimental, fail-closed selection writer. Never cache a managed object address.</summary>
-public sealed class TargetMemoryWriter
+public sealed class TargetMemoryWriter : IDisposable
 {
 	private bool _faulted;
+	private Process? _process;
+	private DataTarget? _target;
+	private ClrRuntime? _runtime;
+	private nint _handle;
+	private int _pid;
+	private string? _gameHash;
+	private string? _commonHash;
 	private const uint VmOperation = 0x0008, VmRead = 0x0010, VmWrite = 0x0020;
 	private const string TestedHash = "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634";
 
@@ -46,15 +53,31 @@ public sealed class TargetMemoryWriter
 		bool writeStarted = false;
 		try
 		{
-			using Process process = Process.GetProcessById(pid);
-			if (process.HasExited || process.ProcessName != "NinOnline")
-				return ActionResult.Rejected("Processo do jogo mudou");
-			string directory = Path.GetDirectoryName(process.MainModule?.FileName ?? "") ?? "";
-			if (!HashMatches(Path.Combine(directory, "NinOnline.dll"), profile.Sha256) ||
-				!HashMatches(Path.Combine(directory, "Common.dll"), profile.CommonSha256))
-				return ActionResult.Rejected("Hash da build mudou");
-			using DataTarget target = DataTarget.AttachToProcess(pid, suspend: false);
-			using ClrRuntime runtime = target.ClrVersions.Single().CreateRuntime();
+			if (_process is null)
+			{
+				_process = Process.GetProcessById(pid);
+				if (_process.HasExited || _process.ProcessName != "NinOnline")
+					return ActionResult.Rejected("Processo do jogo mudou");
+				string directory = Path.GetDirectoryName(_process.MainModule?.FileName ?? "") ?? "";
+				if (!HashMatches(Path.Combine(directory, "NinOnline.dll"), profile.Sha256) ||
+					!HashMatches(Path.Combine(directory, "Common.dll"), profile.CommonSha256))
+					return ActionResult.Rejected("Hash da build mudou");
+				_pid = pid;
+				_gameHash = profile.Sha256;
+				_commonHash = profile.CommonSha256;
+				_target = DataTarget.AttachToProcess(pid, suspend: false);
+				_runtime = _target.ClrVersions.Single().CreateRuntime();
+				_handle = OpenProcess(VmOperation | VmRead | VmWrite, false, pid);
+				if (_handle == 0) return ActionResult.Rejected("Acesso à memória recusado");
+			}
+			if (_process.HasExited || _pid != pid || _gameHash != profile.Sha256 ||
+				_commonHash != profile.CommonSha256 || _handle == 0 || _runtime is null)
+			{
+				_faulted = true;
+				return ActionResult.Rejected("Processo/perfil mudou; reconecte");
+			}
+			_runtime.FlushCachedData();
+			ClrRuntime runtime = _runtime;
 			var module = runtime.EnumerateModules().Single(m => Path.GetFileName(m.Name) == "NinOnline.dll");
 			var globals = module.GetTypeByName(profile.Globals);
 			var roots = module.GetTypeByName(profile.Roots);
@@ -96,12 +119,9 @@ public sealed class TargetMemoryWriter
 				return ActionResult.Rejected("Campos do alvo não são contíguos");
 			// ClrMD's instance offsets start after the 8-byte method-table pointer on x64.
 			ulong kindAddress = selected.Address + (ulong)IntPtr.Size;
-			nint handle = OpenProcess(VmOperation | VmRead | VmWrite, false, pid);
-			if (handle == 0) return ActionResult.Rejected("Acesso à memória recusado");
-			try
 			{
 				byte[] before = new byte[8];
-				if (!ReadProcessMemory(handle, (nint)kindAddress, before, 8, out nuint read) || read != 8 ||
+				if (!ReadProcessMemory(_handle, (nint)kindAddress, before, 8, out nuint read) || read != 8 ||
 					BitConverter.ToInt32(before, 0) != selected.ReadField<int>(fields.Kind) ||
 					BitConverter.ToInt32(before, 4) != selected.ReadField<int>(fields.Index) ||
 					selectedField.ReadObject(domain).Address != selected.Address || !gate())
@@ -110,13 +130,13 @@ public sealed class TargetMemoryWriter
 				BitConverter.GetBytes(fields.PlayerKind).CopyTo(desired, 0);
 				BitConverter.GetBytes(matches[0].Slot).CopyTo(desired, 4);
 				writeStarted = true;
-				if (!WriteProcessMemory(handle, (nint)kindAddress, desired, 8, out nuint written) || written != 8)
+				if (!WriteProcessMemory(_handle, (nint)kindAddress, desired, 8, out nuint written) || written != 8)
 				{
 					_faulted = true;
 					return ActionResult.Rejected("Escrita incompleta; desative e reconecte antes de tentar novamente");
 				}
 				byte[] after = new byte[8];
-				if (!ReadProcessMemory(handle, (nint)kindAddress, after, 8, out read) || read != 8 ||
+				if (!ReadProcessMemory(_handle, (nint)kindAddress, after, 8, out read) || read != 8 ||
 					!after.SequenceEqual(desired) || selectedField.ReadObject(domain).Address != selected.Address)
 				{
 					_faulted = true;
@@ -124,13 +144,24 @@ public sealed class TargetMemoryWriter
 				}
 				return ActionResult.Ok("Campos escritos; aguardando leitura posterior do alvo no cliente");
 			}
-			finally { CloseHandle(handle); }
 		}
 		catch (Exception ex)
 		{
 			if (writeStarted) _faulted = true;
 			return ActionResult.Rejected("Escrita bloqueada: " + ex.GetType().Name + (_faulted ? "; reconecte" : ""));
 		}
+	}
+
+	public void Dispose()
+	{
+		_faulted = true;
+		if (_handle != 0) { CloseHandle(_handle); _handle = 0; }
+		_runtime?.Dispose();
+		_target?.Dispose();
+		_process?.Dispose();
+		_runtime = null;
+		_target = null;
+		_process = null;
 	}
 
 	private static bool HashMatches(string path, string expected)

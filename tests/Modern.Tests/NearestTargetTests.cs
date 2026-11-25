@@ -51,7 +51,7 @@ public class NearestTargetTests
     }
 
     [Fact]
-    public void TargetKeyIsBoundedAndRequiresFreshObservation()
+    public void TargetSelectionIsBoundedAndRequiresFreshObservation()
     {
         var clock = new SimulatedClock(0);
         var taps = 0;
@@ -69,6 +69,33 @@ public class NearestTargetTests
         Assert.Contains("selecionado", engine.Status);
         engine.Update(Frame(500), false, false, false);
         Assert.Equal("Auto Target OFF", engine.Status);
+    }
+
+    [Fact]
+    public void SmartTargetOnlyRequestsWhileHeldAndPreservesLastSelectionOnRelease()
+    {
+        var settings = new SmartTargetSettings { RadiusTiles = 5, HoldKey = "Tab" };
+        settings.Validate();
+        Assert.True(settings.Selection().IgnoreSameVillage);
+        Assert.Throws<ArgumentException>(() => (settings with { HoldKey = "F12" }).Validate());
+        var clock = new SimulatedClock(0);
+        var selected = new List<string>();
+        var engine = new AutoTargetEngine(clock, settings.Selection(), target =>
+        {
+            selected.Add(target.Id);
+            return ActionResult.Ok();
+        }, "Smart Target");
+        engine.Update(Frame(0), enabled: false, allowed: true, higherPriorityBusy: false);
+        Assert.Empty(selected);
+        engine.Update(Frame(0), enabled: true, allowed: true, higherPriorityBusy: false);
+        Assert.Equal(new[] { "4:Nearest" }, selected);
+        engine.Update(Frame(100, "4:Nearest"), enabled: false, allowed: false, higherPriorityBusy: false);
+        Assert.Single(selected);
+        Assert.Equal("Smart Target OFF", engine.Status);
+        clock.Advance(200);
+        engine.Update(Frame(200, "4:Nearest"), enabled: true, allowed: true, higherPriorityBusy: false);
+        Assert.Single(selected);
+        Assert.Contains("selecionado", engine.Status);
     }
 
     [Fact]

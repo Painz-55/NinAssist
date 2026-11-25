@@ -4,7 +4,7 @@ using NinOnlineAutoAssist.Core.Abstractions;
 
 namespace NinOnlineAutoAssist.Core.Security;
 
-public enum AppFeature { AutoTurning, SubPunishLegacy, SubPunishNew, AutoAttack, Tool, Follow, Stamina, MapPlayers, ResourceInspection, AutoCastTurn, AutoTarget }
+public enum AppFeature { AutoTurning, SubPunishLegacy, SubPunishNew, AutoAttack, Tool, Follow, Stamina, MapPlayers, ResourceInspection, AutoCastTurn, AutoTarget, SmartTarget }
 
 public sealed class Entitlements
 {

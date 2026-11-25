@@ -20,6 +20,8 @@ features: map
   Follow: boolean true
   Stamina: boolean true
   MapPlayers: boolean true
+  AutoTarget: boolean false (habilite apenas para ensaio autorizado)
+  SmartTarget: boolean false (habilite apenas para ensaio autorizado)
   ResourceInspection: boolean true
 expiresAt: timestamp (opcional; omita o campo para não definir vencimento)
 ```

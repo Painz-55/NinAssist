@@ -91,8 +91,12 @@ public sealed class LiveContext : IDisposable
 	private volatile bool _castTurnEnabled;
 
 	private volatile bool _autoTargetEnabled;
+	private volatile bool _smartTargetEnabled;
 
 	private bool _dispatchingTargetMemory;
+	private LiveInputKind _dispatchTargetKind;
+	private bool SmartHoldDown => LiveInputController.IsDown(SmartTargetSettings.HoldKeys[Config.SmartTarget.HoldKey]);
+	private TargetMemoryWriter? _targetWriter;
 
 	private bool _dispatchingCastTurn;
 
@@ -143,6 +147,7 @@ public sealed class LiveContext : IDisposable
 	public AutoCastTurnEngine? CastTurn { get; private set; }
 
 	public AutoTargetEngine? AutoTarget { get; private set; }
+	public AutoTargetEngine? SmartTarget { get; private set; }
 
 	public NavigationFrame? Navigation
 	{
@@ -209,6 +214,7 @@ public sealed class LiveContext : IDisposable
 	public string CastTurnStatus { get; private set; } = "Auto Cast Turn OFF";
 
 	public string AutoTargetStatus { get; private set; } = "Auto Target OFF";
+	public string SmartTargetStatus { get; private set; } = "Smart Target OFF";
 
 	public bool CounterAttackAuthorized => _authorized;
 
@@ -386,31 +392,13 @@ public sealed class LiveContext : IDisposable
 					liveContext._dispatchingCastTurn = false;
 				}
 			});
-			var targetMemoryWriter = new TargetMemoryWriter();
-			AutoTarget = new AutoTargetEngine(_clock, config.AutoTarget, delegate(TargetInfo target)
-			{
-				liveContext._dispatchFrame = liveContext.Frame;
-				if (liveContext._dispatchFrame == null)
-					return ActionResult.Rejected("Leitura indisponível para seleção");
-				liveContext._dispatchingTargetMemory = true;
-				try
-				{
-					LiveFrame? current = liveContext.Frame;
-					TargetInfo? currentTarget = NearestTargetPolicy.Resolve(current, config.AutoTarget.RadiusTiles, config.AutoTarget.IgnoreSameVillage);
-					if (current == null || currentTarget?.Id != target.Id ||
-						Math.Abs(currentTarget.PositionX - target.PositionX) > 0.25 ||
-						Math.Abs(currentTarget.PositionY - target.PositionY) > 0.25)
-						return ActionResult.Rejected("Alvo mudou desde a leitura anterior; sem escrita");
-					ActionResult actionResult = targetMemoryWriter.Select(liveContext.Provider.ProcessId,
-						liveContext.Provider.Profile, current, currentTarget, () => liveContext.CanDispatch(LiveInputKind.TargetMemory));
-					liveContext.Log.Log(actionResult.Accepted ? LogLevel.Info : LogLevel.Warning, "Auto Target: " + actionResult.Reason, EventOrigin.Requested);
-					return actionResult;
-				}
-				finally
-				{
-					liveContext._dispatchingTargetMemory = false;
-				}
-			});
+			_targetWriter = new TargetMemoryWriter();
+			AutoTarget = new AutoTargetEngine(_clock, config.AutoTarget,
+				target => liveContext.RequestTargetMemory(target, LiveInputKind.TargetMemory, config.AutoTarget));
+			config.SmartTarget.Validate();
+			AutoTargetSettings smartSelection = config.SmartTarget.Selection();
+			SmartTarget = new AutoTargetEngine(_clock, smartSelection,
+				target => liveContext.RequestTargetMemory(target, LiveInputKind.SmartTargetMemory, smartSelection), "Smart Target");
 			AutoTurning = new AutoTurningEngine(_input, _clock, Log, config.ToAutoTurningOptions()with
 			{
 				Enabled = false,
@@ -463,7 +451,7 @@ public sealed class LiveContext : IDisposable
 			_automation = new ResponsiveAutomationLoop(Step, delegate(Exception ex2)
 			{
 				liveContext._autoEnabled = (liveContext._subEnabled = (liveContext._authorized = (liveContext._combatEnabled = (liveContext._combatAuthorized = (liveContext._followEnabled = false)))));
-				liveContext._staminaEnabled = (liveContext._castTurnEnabled = (liveContext._autoTargetEnabled = false));
+				liveContext._staminaEnabled = (liveContext._castTurnEnabled = (liveContext._autoTargetEnabled = (liveContext._smartTargetEnabled = false)));
 				liveContext._attackEnabled = liveContext._toolEnabled = false;
 				lock (liveContext._automationLock)
 				{
@@ -511,7 +499,9 @@ public sealed class LiveContext : IDisposable
 						NavigationFrame navigationFrame = Volatile.Read(in liveContext._navigation);
 						liveContext.Provider.ReadNavigation = !liveContext._subReadBurst && !flag2 && flag && ((object)navigationFrame == null || navigationFrame.Map != Volatile.Read(in liveContext._frame)?.Map || liveContext._clock.NowMs - navigationFrame.CapturedAtMs >= 100);
 						MapPlayersFrame mapPlayersFrame = Volatile.Read(in liveContext._mapPlayers);
-						liveContext.Provider.ReadMapPlayers = !liveContext._subReadBurst && (!flag2 || (liveContext._castTurnEnabled && liveContext.Config.AutoCastTurn.TargetMode == CastTurnTargetMode.Nearest)) && liveContext._access.Allows(AppFeature.MapPlayers) && ((object)mapPlayersFrame == null || mapPlayersFrame.Map != Volatile.Read(in liveContext._frame)?.Map || liveContext._clock.NowMs - mapPlayersFrame.CapturedAtMs >= ((liveContext._castTurnEnabled || liveContext._combatEnabled || liveContext._autoTargetEnabled) ? 350 : (liveContext._overlayEnabled ? 100 : 200)));
+						int playerRefreshMs = (liveContext._autoTargetEnabled || (liveContext._smartTargetEnabled && liveContext.SmartHoldDown)) ? 100 :
+							(liveContext._castTurnEnabled || liveContext._combatEnabled) ? 350 : liveContext._overlayEnabled ? 100 : 200;
+						liveContext.Provider.ReadMapPlayers = !liveContext._subReadBurst && (!flag2 || (liveContext._castTurnEnabled && liveContext.Config.AutoCastTurn.TargetMode == CastTurnTargetMode.Nearest)) && liveContext._access.Allows(AppFeature.MapPlayers) && ((object)mapPlayersFrame == null || mapPlayersFrame.Map != Volatile.Read(in liveContext._frame)?.Map || liveContext._clock.NowMs - mapPlayersFrame.CapturedAtMs >= playerRefreshMs);
 						liveContext.Provider.ReadFullMap = !liveContext._subReadBurst && !flag2 && liveContext._access.Allows(AppFeature.MapPlayers) && liveContext.Provider.FullMap?.Map != Volatile.Read(in liveContext._frame)?.Map;
 						if (!liveContext._access.Allows(AppFeature.MapPlayers))
 						{
@@ -590,12 +580,40 @@ public sealed class LiveContext : IDisposable
 		catch (Exception ex)
 		{
 			_automation?.Dispose();
+			_targetWriter?.Dispose();
 			_automation = null;
 			_connectionStatus = ex.Message;
 			Provider?.Dispose();
 			Provider = null;
 			Log.Log(LogLevel.Error, "Conexão recusada: " + ex.Message);
 		}
+	}
+
+	private ActionResult RequestTargetMemory(TargetInfo target, LiveInputKind kind, AutoTargetSettings settings)
+	{
+		_dispatchFrame = Frame;
+		if (_dispatchFrame is null)
+			return ActionResult.Rejected("Leitura indisponível para seleção");
+		_dispatchTargetKind = kind;
+		_dispatchingTargetMemory = true;
+		try
+		{
+			LiveFrame? current = Frame;
+			TargetInfo? nearest = NearestTargetPolicy.Resolve(current, settings.RadiusTiles, settings.IgnoreSameVillage);
+			if (current is null || nearest?.Id != target.Id ||
+				Math.Abs(nearest.PositionX - target.PositionX) > 0.25 ||
+				Math.Abs(nearest.PositionY - target.PositionY) > 0.25)
+				return ActionResult.Rejected("Alvo mudou desde a leitura anterior; sem escrita");
+			long startedAt = Stopwatch.GetTimestamp();
+			ActionResult result = _targetWriter!.Select(Provider!.ProcessId, Provider.Profile,
+				current, nearest, () => CanDispatch(kind));
+			Log.Log(result.Accepted ? LogLevel.Info : LogLevel.Warning,
+				(kind == LiveInputKind.SmartTargetMemory ? "Smart Target: " : "Auto Target: ") + result.Reason +
+				$"; escrita/validação {Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0} ms",
+				EventOrigin.Requested);
+			return result;
+		}
+		finally { _dispatchingTargetMemory = false; }
 	}
 
 	public void SetAutoTurningEnabled(bool enabled)
@@ -742,7 +760,12 @@ public sealed class LiveContext : IDisposable
 
 	public bool SetAutoTargetEnabled(bool enabled)
 	{
-		enabled &= _access.Allows(AppFeature.AutoTarget) && _access.Allows(AppFeature.MapPlayers);
+		if (enabled && _smartTargetEnabled)
+		{
+			Log.Log(LogLevel.Warning, "Auto Target: desligue Smart Target antes de ligar este módulo", EventOrigin.Requested);
+			return false;
+		}
+		enabled &= _access.Allows(AppFeature.AutoTarget) && _access.Allows(AppFeature.MapPlayers) && !_smartTargetEnabled;
 		if (!enabled)
 		{
 			_autoTargetEnabled = false;
@@ -761,13 +784,34 @@ public sealed class LiveContext : IDisposable
 		return enabled;
 	}
 
+	public bool SetSmartTargetEnabled(bool enabled)
+	{
+		if (enabled && _autoTargetEnabled)
+		{
+			Log.Log(LogLevel.Warning, "Smart Target: desligue Auto Target antes de ligar este módulo", EventOrigin.Requested);
+			return false;
+		}
+		enabled &= _access.Allows(AppFeature.SmartTarget) && _access.Allows(AppFeature.MapPlayers) && !_autoTargetEnabled;
+		if (!enabled) _smartTargetEnabled = false;
+		lock (_automationLock)
+		{
+			if (_disposed) return false;
+			SmartTarget?.Reset();
+			_smartTargetEnabled = enabled;
+			Log.Log(LogLevel.Info, $"Smart Target {(enabled ? "ON" : "OFF")}; segure {Config.SmartTarget.HoldKey} para selecionar; soltar mantém o alvo", EventOrigin.Requested);
+		}
+		_automation?.Wake();
+		return enabled;
+	}
+
 	private SafetyDecision CheckSafety(LiveInputKind kind)
 	{
 		if (!LocalTrialPolicy.CanActuate(Provider?.Profile))
 		{
 			return new SafetyDecision(Allowed: false, "Perfil de jogo não aprovado para enviar teclas");
 		}
-		if (Provider.Profile.ExternalProfile && !Provider.Profile.ValidatedInputKinds.Contains<string>(kind.ToString(), StringComparer.Ordinal))
+		string profileKind = kind == LiveInputKind.SmartTargetMemory ? nameof(LiveInputKind.TargetMemory) : kind.ToString();
+		if (Provider.Profile.ExternalProfile && !Provider.Profile.ValidatedInputKinds.Contains(profileKind, StringComparer.Ordinal))
 		{
 			return new SafetyDecision(Allowed: false, $"{kind}: sinal ainda não validado para esta build");
 		}
@@ -791,7 +835,7 @@ public sealed class LiveContext : IDisposable
 		{
 			return new SafetyDecision(Allowed: false, "Fan exige aprovação de giro para esta build");
 		}
-		if ((kind == LiveInputKind.TargetMemory || (kind == LiveInputKind.CastTurning && Config.AutoCastTurn.TargetMode == CastTurnTargetMode.Nearest)) && !_access.Allows(AppFeature.MapPlayers))
+		if ((kind is LiveInputKind.TargetMemory or LiveInputKind.SmartTargetMemory || (kind == LiveInputKind.CastTurning && Config.AutoCastTurn.TargetMode == CastTurnTargetMode.Nearest)) && !_access.Allows(AppFeature.MapPlayers))
 		{
 			return new SafetyDecision(Allowed: false, "Lista de jogadores não autorizada pelo Firebase");
 		}
@@ -804,6 +848,7 @@ public sealed class LiveContext : IDisposable
 			LiveInputKind.Punish => SubFeature,
 			LiveInputKind.CastTurning => AppFeature.AutoCastTurn,
 			LiveInputKind.TargetMemory => AppFeature.AutoTarget,
+			LiveInputKind.SmartTargetMemory => AppFeature.SmartTarget,
 			_ => AppFeature.AutoTurning,
 		};
 		if (kind != LiveInputKind.Turning && !_access.Allows(feature))
@@ -855,6 +900,8 @@ public sealed class LiveContext : IDisposable
 			return LiveSafetyGate.CheckCastTurning(liveFrame, nowMs, _castTurnEnabled, foreground, emergency, textEntryFocused, Config.AutoCastTurn.TargetMode == CastTurnTargetMode.Selected);
 		case LiveInputKind.TargetMemory:
 			return LiveSafetyGate.CheckAutoTarget(liveFrame, nowMs, _autoTargetEnabled, foreground, emergency, textEntryFocused);
+		case LiveInputKind.SmartTargetMemory:
+			return LiveSafetyGate.CheckAutoTarget(liveFrame, nowMs, _smartTargetEnabled && SmartHoldDown, foreground, emergency, textEntryFocused);
 		case LiveInputKind.Stamina:
 		{
 			SafetyDecision result = LiveSafetyGate.CheckStamina(liveFrame, nowMs, _staminaEnabled, foreground, emergency, textEntryFocused);
@@ -1011,14 +1058,16 @@ public sealed class LiveContext : IDisposable
 					}
 					return false;
 				}
-				if (kind == LiveInputKind.TargetMemory)
+				if (kind is LiveInputKind.TargetMemory or LiveInputKind.SmartTargetMemory)
 				{
-					if (!_dispatchingTargetMemory || SubNeedsPriority || liveFrame2.Cast?.Active == true)
+					if (!_dispatchingTargetMemory || _dispatchTargetKind != kind || SubNeedsPriority || liveFrame2.Cast?.Active == true ||
+						(kind == LiveInputKind.SmartTargetMemory && !SmartHoldDown))
 					{
 						return false;
 					}
-					TargetInfo? expected = NearestTargetPolicy.Resolve(liveFrame, Config.AutoTarget.RadiusTiles, Config.AutoTarget.IgnoreSameVillage);
-					TargetInfo? current = NearestTargetPolicy.Resolve(liveFrame2, Config.AutoTarget.RadiusTiles, Config.AutoTarget.IgnoreSameVillage);
+					AutoTargetSettings settings = kind == LiveInputKind.SmartTargetMemory ? Config.SmartTarget.Selection() : Config.AutoTarget;
+					TargetInfo? expected = NearestTargetPolicy.Resolve(liveFrame, settings.RadiusTiles, settings.IgnoreSameVillage);
+					TargetInfo? current = NearestTargetPolicy.Resolve(liveFrame2, settings.RadiusTiles, settings.IgnoreSameVillage);
 					return expected != null && current?.Id == expected.Id &&
 						Math.Abs(current.PositionX - expected.PositionX) <= 0.25 &&
 						Math.Abs(current.PositionY - expected.PositionY) <= 0.25 &&
@@ -1241,13 +1290,15 @@ public sealed class LiveContext : IDisposable
 		if (accessMask != _accessMask || !_access.IsValid)
 		{
 			_accessMask = accessMask;
-			_autoEnabled = (_subEnabled = (_authorized = (_combatEnabled = (_combatAuthorized = (_followEnabled = (_staminaEnabled = (_castTurnEnabled = (_autoTargetEnabled = false))))))));
+			_autoEnabled = _subEnabled = _authorized = _combatEnabled = _combatAuthorized = false;
+			_followEnabled = _staminaEnabled = _castTurnEnabled = _autoTargetEnabled = _smartTargetEnabled = false;
 			_input?.ReleaseFollow();
 			Follow?.Reset();
 			Combat?.Reset();
 			Stamina?.Reset();
 			CastTurn?.Reset();
 			AutoTarget?.Reset();
+			SmartTarget?.Reset();
 			_attackEnabled = _toolEnabled = false;
 			ResetPunish();
 			AutoTurning?.ResetCadence();
@@ -1364,6 +1415,11 @@ public sealed class LiveContext : IDisposable
 		SafetyDecision autoTargetSafety = CheckSafety(LiveInputKind.TargetMemory);
 		AutoTarget?.Update(frame, _autoTargetEnabled, autoTargetSafety.Allowed, frame?.Cast?.Active == true || SubNeedsPriority);
 		AutoTargetStatus = (autoTargetSafety.Allowed ? (AutoTarget?.Status ?? "Indisponível") : autoTargetSafety.Reason);
+		bool smartHeld = _smartTargetEnabled && SmartHoldDown;
+		SafetyDecision smartSafety = CheckSafety(LiveInputKind.SmartTargetMemory);
+		SmartTarget?.Update(frame, smartHeld, smartSafety.Allowed, frame?.Cast?.Active == true || SubNeedsPriority);
+		SmartTargetStatus = !_smartTargetEnabled ? "Smart Target OFF" : !smartHeld ? $"Smart Target: aguardando {Config.SmartTarget.HoldKey}; último alvo mantido" :
+			(smartSafety.Allowed ? SmartTarget?.Status ?? "Indisponível" : smartSafety.Reason);
 		UpdateFollow();
 		AutoCastTurnEngine? castTurn = CastTurn;
 		int num;
@@ -1435,7 +1491,7 @@ public sealed class LiveContext : IDisposable
 		{
 			_disposed = true;
 			_autoEnabled = (_subEnabled = (_authorized = (_combatEnabled = (_combatAuthorized = (_followEnabled = false)))));
-			_staminaEnabled = (_castTurnEnabled = (_autoTargetEnabled = false));
+			_staminaEnabled = (_castTurnEnabled = (_autoTargetEnabled = (_smartTargetEnabled = false)));
 			_attackEnabled = _toolEnabled = false;
 			_stop.Cancel();
 			lock (_automationLock)
@@ -1444,6 +1500,7 @@ public sealed class LiveContext : IDisposable
 			}
 			_reader?.GetAwaiter().GetResult();
 			_automation?.Dispose();
+			_targetWriter?.Dispose();
 			lock (_automationLock)
 			{
 				_input?.Dispose();

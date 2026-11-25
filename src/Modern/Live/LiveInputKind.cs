@@ -9,5 +9,6 @@ public enum LiveInputKind
 	Follow,
 	Stamina,
 	CastTurning,
-	TargetMemory
+	TargetMemory,
+	SmartTargetMemory
 }

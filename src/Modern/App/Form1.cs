@@ -98,6 +98,7 @@ public sealed class Form1 : Form
 	private Button _btnStamina;
 
 	private Button _btnAutoTarget;
+	private Button _btnSmartTarget;
 
 	private Label _lblCombat;
 
@@ -106,6 +107,7 @@ public sealed class Form1 : Form
 	private Label _lblStamina;
 
 	private Label _lblAutoTarget;
+	private Label _lblSmartTarget;
 
 	private TextBox _txtCharacter;
 
@@ -275,14 +277,14 @@ public sealed class Form1 : Form
 		TableLayoutPanel tableLayoutPanel3 = new TableLayoutPanel
 		{
 			Dock = DockStyle.Fill,
-			ColumnCount = 9,
+			ColumnCount = 10,
 			RowCount = 2,
 			BackColor = Bg,
 			Padding = new Padding(0, 4, 0, 2)
 		};
-		for (int num = 0; num < 9; num++)
+		for (int num = 0; num < 10; num++)
 		{
-			tableLayoutPanel3.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 9f));
+			tableLayoutPanel3.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 10f));
 		}
 		tableLayoutPanel3.RowStyles.Add(new RowStyle(SizeType.Absolute, 82f));
 		tableLayoutPanel3.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
@@ -324,6 +326,13 @@ public sealed class Form1 : Form
 			object tag = _btnCombat.Tag;
 			bool flag = !(tag is bool) || !(bool)tag;
 			_btnCombat.Tag = _ctx?.SetAttackEnabled(flag) ?? false;
+			RefreshModuleButtons();
+		};
+		_btnSmartTarget = MakeModuleButton("SMART TARGET", on: false);
+		_btnSmartTarget.Click += delegate
+		{
+			bool enable = _btnSmartTarget.Tag is not true;
+			_btnSmartTarget.Tag = _ctx?.SetSmartTargetEnabled(enable) ?? false;
 			RefreshModuleButtons();
 		};
 		_btnTool = MakeModuleButton("AUTO TOOL", on: false);
@@ -393,9 +402,10 @@ public sealed class Form1 : Form
 		tableLayoutPanel3.Controls.Add(_btnFollow, 5, 0);
 		tableLayoutPanel3.Controls.Add(_btnStamina, 6, 0);
 		tableLayoutPanel3.Controls.Add(_btnAutoTarget, 7, 0);
-		tableLayoutPanel3.Controls.Add(button2, 8, 0);
+		tableLayoutPanel3.Controls.Add(_btnSmartTarget, 8, 0);
+		tableLayoutPanel3.Controls.Add(button2, 9, 0);
 		tableLayoutPanel3.Controls.Add(_lblProvider, 0, 1);
-		tableLayoutPanel3.SetColumnSpan(_lblProvider, 9);
+		tableLayoutPanel3.SetColumnSpan(_lblProvider, 10);
 		tableLayoutPanel.Controls.Add(tableLayoutPanel3, 0, 1);
 		TableLayoutPanel tableLayoutPanel4 = new TableLayoutPanel
 		{
@@ -431,7 +441,8 @@ public sealed class Form1 : Form
 		_lblStamina = AddStatusRow(tableLayoutPanel5, 10, "STAMINA — LIMITES CONFIGURÁVEIS");
 		_lblCastTurn = AddStatusRow(tableLayoutPanel5, 11, "AUTO CAST TURN — FINAL DO CAST");
 		_lblAutoTarget = AddStatusRow(tableLayoutPanel5, 12, "AUTO TARGET — ALVO MAIS PRÓXIMO");
-		tableLayoutPanel5.RowCount = 13;
+		_lblSmartTarget = AddStatusRow(tableLayoutPanel5, 13, "SMART TARGET — SEGURAR TECLA");
+		tableLayoutPanel5.RowCount = 14;
 		tableLayoutPanel5.Height = 520;
 		TableLayoutPanel tableLayoutPanel6 = new TableLayoutPanel
 		{
@@ -736,6 +747,7 @@ public sealed class Form1 : Form
 		AddCard(2, 1, "AUTO FOLLOW", () => $"Segurar: {_config.CombatAssist.FollowHoldKey}\nParar: {_config.CombatAssist.FollowStopDistance:0.#} tiles", () => ConfigureModule(ModuleSettingsFeature.Follow));
 		AddCard(0, 2, "AUTO STAMINA", () => $"Desligar <{_config.CombatAssist.StaminaDisableBelowPercent}% · religar >{_config.CombatAssist.StaminaEnableAbovePercent}%\nRun: {(_ctx?.StaminaBindingValid == true ? "validado" : "verifique tecla / modo")}", () => ConfigureModule(ModuleSettingsFeature.Stamina));
 		AddCard(1, 2, "AUTO TARGET", () => $"Memória experimental · raio: {_config.AutoTarget.RadiusTiles:0.#} tiles\nIgnorar própria vila: {(_config.AutoTarget.IgnoreSameVillage ? "sim" : "não")}", ConfigureAutoTarget);
+		AddCard(2, 2, "SMART TARGET", () => $"Segurar {_config.SmartTarget.HoldKey} · raio: {_config.SmartTarget.RadiusTiles:0.#} tiles\nOutras vilas conhecidas", ConfigureSmartTarget);
 		return grid;
 
 		void AddCard(int column, int row, string title, Func<string> summary, Action configure)
@@ -1275,6 +1287,7 @@ public sealed class Form1 : Form
 		_btnCastTurn.Enabled = flag && Allowed(AppFeature.AutoCastTurn) && Approved(LiveInputKind.CastTurning) && (object)profile?.CastTiming != null;
 		_btnCastTurn.Enabled &= _config.AutoCastTurn.TargetMode != CastTurnTargetMode.Nearest || Allowed(AppFeature.MapPlayers);
 		_btnAutoTarget.Enabled = flag && Allowed(AppFeature.AutoTarget) && Allowed(AppFeature.MapPlayers) && Approved(LiveInputKind.TargetMemory);
+		_btnSmartTarget.Enabled = flag && Allowed(AppFeature.SmartTarget) && Allowed(AppFeature.MapPlayers) && Approved(LiveInputKind.TargetMemory);
 		_inspectionButton.Enabled = Allowed(AppFeature.ResourceInspection);
 		_account.Text = _session.Email + " · " + _session.Status;
 		bool Approved(LiveInputKind kind)
@@ -1310,6 +1323,7 @@ public sealed class Form1 : Form
 			_ctx.SetStaminaEnabled(enabled: false);
 			_ctx.SetCastTurnEnabled(enabled: false);
 			_ctx.SetAutoTargetEnabled(enabled: false);
+			_ctx.SetSmartTargetEnabled(enabled: false);
 			_ctx.MemoryLog.EntryLogged -= OnLogEntry;
 			_ctx.Dispose();
 			_ctx = null;
@@ -1326,6 +1340,7 @@ public sealed class Form1 : Form
 		btnAutoTurning.Tag = tag;
 		_btnCastTurn.Tag = false;
 		_btnAutoTarget.Tag = false;
+		_btnSmartTarget.Tag = false;
 		RefreshModuleButtons();
 		RefreshModeBadge();
 		RefreshSettingsSummaries();
@@ -1431,6 +1446,22 @@ public sealed class Form1 : Form
 		ConnectToGame();
 	}
 
+	private void ConfigureSmartTarget()
+	{
+		EmergencyStop();
+		using SmartTargetForm form = new SmartTargetForm(_config.SmartTarget);
+		if (form.ShowDialog(this) != DialogResult.OK) return;
+		AutoAssistConfig next = _config with { SmartTarget = form.Settings };
+		try { ConfigLoader.Save(SettingsPath, next); }
+		catch (Exception ex)
+		{
+			AppendLog(LogLevel.Error, "Não foi possível salvar: " + ex.Message, null);
+			return;
+		}
+		_config = next;
+		ConnectToGame();
+	}
+
 	private void ToggleAutoTurning()
 	{
 		object tag = _btnAutoTurning.Tag;
@@ -1478,6 +1509,7 @@ public sealed class Form1 : Form
 		RefreshModuleButton(_btnAutoTurning, "AUTO TURNING");
 		RefreshModuleButton(_btnCastTurn, "AUTO CAST TURN");
 		RefreshModuleButton(_btnAutoTarget, "AUTO TARGET");
+		RefreshModuleButton(_btnSmartTarget, "SMART TARGET");
 		RefreshModuleButton(_btnSubPunish, "SUBPUNISH TAI/ÁGUA");
 		RefreshModuleButton(_btnCombat, "AUTO AA");
 		RefreshModuleButton(_btnTool, "AUTO TOOL");
@@ -1515,6 +1547,7 @@ public sealed class Form1 : Form
 		_ctx?.SetStaminaEnabled(enabled: false);
 		_ctx?.SetCastTurnEnabled(enabled: false);
 		_ctx?.SetAutoTargetEnabled(enabled: false);
+		_ctx?.SetSmartTargetEnabled(enabled: false);
 		_btnAutoTurning.Tag = false;
 		_btnSubPunish.Tag = false;
 		Button btnCombat = _btnCombat;
@@ -1525,6 +1558,7 @@ public sealed class Form1 : Form
 		btnCombat.Tag = (btnTool.Tag = tag);
 		_btnCastTurn.Tag = false;
 		_btnAutoTarget.Tag = false;
+		_btnSmartTarget.Tag = false;
 		LiveInputController.AcknowledgeEmergencyAfterDisarm();
 		RefreshModuleButtons();
 		AppendLog(LogLevel.Warning, "PARADA DE EMERGÊNCIA acionada — módulos desativados", EventOrigin.Requested);
@@ -1848,6 +1882,11 @@ public sealed class Form1 : Form
 			: !Allowed(AppFeature.AutoTarget) || _ctx?.Provider?.Profile is { ExternalProfile: true } targetProfile && !targetProfile.ValidatedInputKinds.Contains("TargetMemory", StringComparer.Ordinal)
 				? "Somente leitura: " + (NearestTargetPolicy.Resolve(_ctx?.Frame, _config.AutoTarget.RadiusTiles, _config.AutoTarget.IgnoreSameVillage)?.Id ?? "nenhum candidato seguro") + " · input não autorizado"
 				: _ctx?.AutoTargetStatus ?? "Desconectado";
+		_lblSmartTarget.Text = !Allowed(AppFeature.MapPlayers)
+			? "Lista de jogadores não autorizada pelo Firebase (MapPlayers)"
+			: !Allowed(AppFeature.SmartTarget) || _ctx?.Provider?.Profile is { ExternalProfile: true } smartProfile && !smartProfile.ValidatedInputKinds.Contains("TargetMemory", StringComparer.Ordinal)
+				? "SmartTarget não autorizado; seleção por memória bloqueada"
+				: _ctx?.SmartTargetStatus ?? "Desconectado";
 		RefreshPlayers();
 	}
 
