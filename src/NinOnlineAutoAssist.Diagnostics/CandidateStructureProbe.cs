@@ -42,6 +42,16 @@ public static class CandidateStructureProbe
         {
             LocalIndex = index, BuffArrayLength = buff.IsArray ? buff.AsArray().Length : -1,
             ActorIntArrays = actorIntArrays,
+            ActorArrayCandidates = actor.Type.Fields.Where(f => f.Type?.IsArray == true &&
+                f.Type.ComponentType?.Fields.Any(c => c.Type?.Name == "System.String") == true)
+                .Select(f => {
+                    try {
+                        var array = f.ReadObject(actor.Address, false);
+                        return new { f.Name, Type = f.Type?.Name,
+                            Length = array.IsArray ? array.AsArray().Length : -1,
+                            Fields = f.Type?.ComponentType?.Fields.Select(c => new { c.Name, Type = c.Type?.Name }).ToArray() };
+                    } catch { return null; }
+                }).Where(x => x is not null).ToArray(),
             RootIntegers = roots.StaticFields.Where(f => f.Type?.Name == "System.Int32" && f.IsInitialized(domain))
                 .Select(f => { try { return new { f.Name, Value = f.Read<int>(domain) }; }
                     catch { return null; } }).Where(x => x is not null).ToArray(),
@@ -49,7 +59,7 @@ public static class CandidateStructureProbe
                 .Select(f => { try { return new { f.Name, Value = f.Read<bool>(domain) }; }
                     catch { return null; } }).Where(x => x is not null).ToArray(),
             BuffFields = Fields(buff.Type?.ComponentType),
-            BuffEntries = buff.IsArray ? Enumerable.Range(0, Math.Min(buff.AsArray().Length, 256))
+            BuffEntries = buff.IsArray && buff.Type?.ComponentType?.IsValueType == false ? Enumerable.Range(0, Math.Min(buff.AsArray().Length, 256))
                 .Select(i => buff.AsArray().GetObjectValue(i)).Where(o => !o.IsNull)
                 .Select(o => new { Strings = o.Type?.Fields.Where(f => f.Type?.Name == "System.String")
                         .Select(f => new { f.Name, Value = o.ReadStringField(f.Name!, 80) }).ToArray(),

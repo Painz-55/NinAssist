@@ -8,6 +8,12 @@ using NinOnlineAutoAssist.Core.Abstractions;
 
 // Measures scheduling only. No game attachment and no keyboard input is sent.
 if (args.Length == 1 && args[0] == "--response-timing") return ResponseTimingProbe.Run();
+if (args.Length == 5 && args[0] == "--raw-target-transition-watch" && int.TryParse(args[1], out var rawTargetPid) &&
+    int.TryParse(args[4], out var rawTargetSeconds))
+    return RawTargetTransitionWatch.Run(rawTargetPid, args[2], args[3], rawTargetSeconds);
+if (args.Length == 5 && args[0] == "--raw-actor-movement-watch" && int.TryParse(args[1], out var rawActorPid) &&
+    int.TryParse(args[4], out var rawActorSeconds))
+    return RawActorMovementWatch.Run(rawActorPid, args[2], args[3], rawActorSeconds);
 if (args.Length == 4 && args[0] == "--camera-candidates" && int.TryParse(args[1], out var cameraPid))
     return CameraCandidateProbe.Run(cameraPid, args[2], args[3]);
 if (args.Length == 4 && args[0] == "--view-candidates" && int.TryParse(args[1], out var viewPid))

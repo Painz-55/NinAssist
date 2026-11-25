@@ -3,13 +3,15 @@ param(
     [Parameter(Mandatory=$true)][string]$PreviousProfileId,
     [Parameter(Mandatory=$true)][string]$GameDirectory,
     [int]$ProcessId = 0,
-    [string]$OutputDirectory
+    [string]$OutputDirectory,
+    [string]$ProfileManifestPath
 )
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $game = Join-Path $GameDirectory 'NinOnline.dll'
 $common = Join-Path $GameDirectory 'Common.dll'
-$manifest = Join-Path $root 'compatibility\profiles.json'
+if (-not $ProfileManifestPath) { $ProfileManifestPath = Join-Path $root 'compatibility\package-profiles.json' }
+$manifest = (Resolve-Path -LiteralPath $ProfileManifestPath -ErrorAction Stop).Path
 if (-not (Test-Path -LiteralPath $game) -or -not (Test-Path -LiteralPath $common) -or
     -not (Test-Path -LiteralPath $BaselineMetadataPath)) { throw 'DLLs ou metadados de baseline ausentes.' }
 if (-not $OutputDirectory) {
