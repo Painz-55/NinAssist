@@ -61,11 +61,11 @@ public sealed class AutoTargetEngine
 			Status = _label + ": leitura indisponível";
 			return;
 		}
-		TargetInfo? nearest = NearestTargetPolicy.Resolve(frame, _settings.RadiusTiles, _settings.IgnoreSameVillage);
+		TargetInfo? nearest = NearestTargetPolicy.Resolve(frame, _settings.RadiusTiles, _settings.IgnoreSameVillage, out string reason);
 		if (nearest is null)
 		{
 			Reset();
-			Status = $"{_label}: nenhum jogador vivo até {_settings.RadiusTiles:0.#} tiles";
+			Status = $"{_label}: {reason} (raio {_settings.RadiusTiles:0.#} tiles)";
 			return;
 		}
 		TargetInfo? selected = frame.Snapshot.Target;

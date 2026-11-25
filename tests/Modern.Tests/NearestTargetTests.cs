@@ -51,6 +51,24 @@ public class NearestTargetTests
     }
 
     [Fact]
+    public void MaskedAppearanceDoesNotOverrideExplicitVillageFilterOrLifeAndRadius()
+    {
+        var frame = Frame(100);
+        var masked = frame.MapPlayers!.Players.Select(p => p.Slot == 3
+            ? p with { Name = "Masked", Village = PlayerVillage.Leaf } : p).ToArray();
+        frame = frame with { MapPlayers = frame.MapPlayers with { Players = masked } };
+        Assert.Equal("3:Masked", NearestTargetPolicy.Resolve(frame, 12, false)?.Id);
+        Assert.Equal("4:Nearest", NearestTargetPolicy.Resolve(frame, 12, true)?.Id);
+        Assert.Null(NearestTargetPolicy.Resolve(frame, 1, false, out string radiusReason));
+        Assert.Contains("fora do raio", radiusReason);
+        var noHealth = masked.Select(p => p.IsLocal ? p : p with { IsAlive = false }).ToArray();
+        Assert.Null(NearestTargetPolicy.Resolve(frame with { MapPlayers = frame.MapPlayers with { Players = noHealth } }, 12, false, out string healthReason));
+        Assert.Contains("vida não confirmada", healthReason);
+        Assert.Null(NearestTargetPolicy.Resolve(frame with { MapPlayers = frame.MapPlayers with { UnreadableSlots = 1 } }, 12, false, out string slotsReason));
+        Assert.Contains("lista incompleta", slotsReason);
+    }
+
+    [Fact]
     public void TargetSelectionIsBoundedAndRequiresFreshObservation()
     {
         var clock = new SimulatedClock(0);
