@@ -10,7 +10,7 @@ public static class RawActorMovementWatch
 {
     public static int Run(int pid, string character, string expectedHash, int seconds)
     {
-        if (seconds is < 10 or > 60 || string.IsNullOrWhiteSpace(character)) return 2;
+        if (seconds is < 1 or > 60 || string.IsNullOrWhiteSpace(character)) return 2;
         using var process = Process.GetProcessById(pid);
         if (process.ProcessName != "NinOnline") return 2;
         var directory = Path.GetDirectoryName(process.MainModule!.FileName)!;
