@@ -190,7 +190,7 @@ internal sealed class LiveInputController : IOrientationController, IActionExecu
 
 	public bool MaintainingCastTurn { get; private set; }
 
-	public LiveInputController(Func<LiveInputKind, bool> allowed, IAutoAssistLogger log, string gameDirectory, string[] comboKeys, string[] activationKeys, Func<ActionResult> prepareComboFacing, CombatAssistSettings combatSettings)
+	public LiveInputController(Func<LiveInputKind, bool> allowed, IAutoAssistLogger log, string gameDirectory, string[] comboKeys, string[] activationKeys, Func<ActionResult> prepareComboFacing, CombatAssistSettings combatSettings, bool followApprovedByProfile)
 	{
 		_allowed = allowed;
 		_prepareComboFacing = prepareComboFacing;
@@ -264,7 +264,10 @@ internal sealed class LiveInputController : IOrientationController, IActionExecu
 		_runConfig = Path.Combine(gameDirectory, "data files", "config.json");
 		try
 		{
-			_runKey = RunBindingValidator.Resolve(bindings, LiveKeySettings.Keys[combatSettings.FollowHoldKey]);
+			// A Follow binding cannot conflict with Run when this exact signed profile cannot dispatch Follow.
+			// Keep the conflict guard unchanged for every profile that does authorize Follow.
+			_runKey = RunBindingValidator.Resolve(bindings,
+				followApprovedByProfile ? LiveKeySettings.Keys[combatSettings.FollowHoldKey] : (ushort)0);
 			StaminaBindingStatus = "Run = " + bindings["Run"][0] + "; modificador nativo permitido; exige HoldToRun=False";
 		}
 		catch (Exception ex)

@@ -35,6 +35,15 @@ public sealed class RunBindingValidatorTests
         Assert.Throws<ArgumentException>(() => RunBindingValidator.Resolve(bindings, 0xA2));
     }
 
+    [Fact]
+    public void RightControlRunWorksWithoutFollowButCollisionIsRejectedWhenFollowIsApproved()
+    {
+        var bindings = new Dictionary<string, string[]> { ["Run"] = new[] { "RControl" },
+            ["ControlModifier"] = new[] { "RControl" } };
+        Assert.Equal((ushort)0xA3, RunBindingValidator.Resolve(bindings, 0));
+        Assert.Throws<ArgumentException>(() => RunBindingValidator.Resolve(bindings, 0xA3));
+    }
+
     [Theory]
     [InlineData("{\"Options\":{\"HoldToRun\":\"False\"}}", true)]
     [InlineData("{\"Options\":{\"HoldToRun\":\"false\",\"Sound\":99}}", true)]

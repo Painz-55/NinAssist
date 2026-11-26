@@ -375,7 +375,10 @@ public sealed class LiveContext : IDisposable
 				Log.Log(LogLevel.Warning, "Perfil externo apenas para leitura: automação bloqueada até validação passiva e assinatura de um perfil aprovado.");
 			}
 			LiveKeySettings.Validate(config.Live.PunishKeys, config.Live.TurnActivationKeys);
-			_input = new LiveInputController(CanDispatch, Log, Provider.GameDirectory, config.Live.PunishKeys, config.Live.TurnActivationKeys, PrepareComboFacing, config.CombatAssist);
+			_input = new LiveInputController(CanDispatch, Log, Provider.GameDirectory, config.Live.PunishKeys, config.Live.TurnActivationKeys,
+				PrepareComboFacing, config.CombatAssist,
+				Provider.Profile.ValidatedInputKinds.Contains(nameof(LiveInputKind.Follow), StringComparer.Ordinal) &&
+				LocalTrialPolicy.CanActuate(Provider.Profile));
 			_comboFacing = new ComboFacingCoordinator(_input, _clock, () => liveContext.Frame, () => liveContext.CheckSafety(LiveInputKind.Turning).Allowed, null, Log);
 			CastTurn = new AutoCastTurnEngine(_clock, config.AutoCastTurn, delegate(Direction direction)
 			{
