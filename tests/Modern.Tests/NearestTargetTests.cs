@@ -243,6 +243,23 @@ public class NearestTargetTests
 			ValidatedAttackModes = ["Melee", "Fan"], PunishComboValidated = true, PunishComboRequiresTarget = true };
 		Assert.True(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(steamIntegrated));
 		Assert.False(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(steamIntegrated with { ValidatedAttackModes = ["Melee", "Fan", "HisuyFan"] }));
+		var newSteam = steam with { Id = "LOCAL TRIAL Steam Raizen 57668CBF 2026-11-26",
+			Sha256 = "57668CBF395C8A503ABA85C8D7181D5712701F7C88ADF5B6EA49EF54DCEEEC89",
+			CommonSha256 = "4DB42166C9D1919083E5B03757B9E8D166145E9C39A410AC22415F1D71171DEB",
+			ValidatedInputKinds = ["Turning", "Stamina", "TargetMemory"],
+			SelectedTarget = new("Ku0ZF1aWYsJ", "nJ5VIOJ8p8E", "mpsVI6aspnF", 1) };
+		Assert.True(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(newSteam));
+		Assert.False(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(newSteam with { ValidatedInputKinds = ["Turning", "Stamina", "TargetMemory", "Attack"] }));
+		Assert.False(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(newSteam with { SelectedTarget = newSteam.SelectedTarget! with { Index = "wrong" } }));
+		Assert.False(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(newSteam with { CommonSha256 = new string('0', 64) }));
+		Assert.False(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(newSteam with { ExperimentalTrial = false }));
+		using var newSteamWriter = new TargetMemoryWriter();
+		var initialFrame = Frame(100);
+		var otherPlayer = NearestTargetPolicy.Resolve(initialFrame, 12, true)!;
+		Assert.False(newSteamWriter.Select(-1, newSteam with { SelectedTarget = newSteam.SelectedTarget! with { Index = "wrong" } },
+			initialFrame, otherPlayer, () => true).Accepted);
+		Assert.False(newSteamWriter.Select(-1, newSteam with { CommonSha256 = new string('0', 64) },
+			initialFrame, otherPlayer, () => true).Accepted);
     }
 
 }

@@ -7,6 +7,32 @@ namespace Modern.Tests;
 public class SteamOfficialCatalogTests
 {
     [Fact]
+    public void NewSteamTrialRequiresExactBuildTargetAndRestrictedInputs()
+    {
+        var profile = GameMemoryProfile.Updated20261104 with
+        {
+            Id = "LOCAL TRIAL Steam Raizen 57668CBF 2026-11-26",
+            Sha256 = "57668CBF395C8A503ABA85C8D7181D5712701F7C88ADF5B6EA49EF54DCEEEC89",
+            CommonSha256 = "4DB42166C9D1919083E5B03757B9E8D166145E9C39A410AC22415F1D71171DEB",
+            ExternalProfile = true, ExperimentalTrial = true, ActuationValidated = false,
+            ValidatedInputKinds = ["Turning", "Stamina", "TargetMemory"],
+            ValidatedAttackModes = [], PunishComboValidated = false, SelectedIndex = null,
+            SelectedTarget = new("Ku0ZF1aWYsJ", "nJ5VIOJ8p8E", "mpsVI6aspnF", 1)
+        };
+        GameMemoryProfile? Verify(GameMemoryProfile candidate)
+        {
+            using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            var payload = JsonSerializer.SerializeToUtf8Bytes(new { schema = 1, profiles = new[] { candidate } });
+            return SignedProfileCatalog.VerifyAndSelect(payload, key.SignData(payload, HashAlgorithmName.SHA256),
+                key.ExportSubjectPublicKeyInfoPem(), candidate.Sha256, candidate.CommonSha256);
+        }
+        Assert.NotNull(Verify(profile));
+        Assert.Throws<InvalidOperationException>(() => Verify(profile with { ValidatedInputKinds = ["Turning", "Stamina", "TargetMemory", "Follow"] }));
+        Assert.Throws<InvalidOperationException>(() => Verify(profile with { SelectedTarget = profile.SelectedTarget! with { Index = "wrong" } }));
+        Assert.Throws<InvalidOperationException>(() => Verify(profile with { CommonSha256 = new string('0', 64) }));
+    }
+
+    [Fact]
     public void PackagedSteamProfileHasValidSignatureAndRestrictedInputs()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "compatibility", "package-profiles.json");

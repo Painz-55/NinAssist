@@ -43,6 +43,14 @@ internal static class LocalTrialPolicy
 			integratedSteam.ValidatedInputKinds.SequenceEqual(["Turning", "Punish", "Attack", "Tool", "Follow", "Stamina", "CastTurning", "TargetMemory"]) &&
 			integratedSteam.ValidatedAttackModes.SequenceEqual(["Melee", "Fan"]))
 			return true;
+		if (profile is { ExternalProfile: true, ExperimentalTrial: true, ActuationValidated: false,
+			Sha256: "57668CBF395C8A503ABA85C8D7181D5712701F7C88ADF5B6EA49EF54DCEEEC89",
+			CommonSha256: "4DB42166C9D1919083E5B03757B9E8D166145E9C39A410AC22415F1D71171DEB",
+			Id: "LOCAL TRIAL Steam Raizen 57668CBF 2026-11-26", PunishComboValidated: false } currentSteam &&
+			currentSteam.ValidatedInputKinds.SequenceEqual(["Turning", "Stamina", "TargetMemory"]) &&
+			currentSteam.ValidatedAttackModes.Length == 0 &&
+			currentSteam.SelectedTarget is { GlobalObject: "Ku0ZF1aWYsJ", Kind: "nJ5VIOJ8p8E", Index: "mpsVI6aspnF", PlayerKind: 1 })
+			return true;
 		return false;
 	}
 }

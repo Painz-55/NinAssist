@@ -33,6 +33,8 @@ public sealed class TargetMemoryWriter : IDisposable
 	private const string SteamTrialHash = "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525";
 	private const string SteamTrialCommonHash = "637E4DB9D08CA4C9285B80E36088C15AEF0D2547FA92D11F48980C2B821C3102";
 	private const string SteamOfficialId = "Nin Online Steam 2026-11-26 (validated core; restricted)";
+	private const string CurrentSteamTrialHash = "57668CBF395C8A503ABA85C8D7181D5712701F7C88ADF5B6EA49EF54DCEEEC89";
+	private const string CurrentSteamTrialCommonHash = "4DB42166C9D1919083E5B03757B9E8D166145E9C39A410AC22415F1D71171DEB";
 
 	[DllImport("kernel32.dll", SetLastError = true)]
 	private static extern nint OpenProcess(uint access, bool inherit, int pid);
@@ -66,14 +68,20 @@ public sealed class TargetMemoryWriter : IDisposable
 			 profile.ValidatedAttackModes.SequenceEqual(["Melee", "Fan"]) &&
 			 profile.PunishComboValidated == true && profile.PunishComboRequiresTarget == true) &&
 			profile.SelectedTarget is { GlobalObject: "F3miMmd6RE4", Kind: "dxFYxym9RQk", Index: "okyYx7CwjXs", PlayerKind: 1 };
-		bool trial = steamTrial || standaloneTrial;
+		bool currentSteamTrial = profile is { ExternalProfile: true, ExperimentalTrial: true, ActuationValidated: false,
+			Id: "LOCAL TRIAL Steam Raizen 57668CBF 2026-11-26", PunishComboValidated: false } &&
+			profile.Sha256 == CurrentSteamTrialHash && profile.CommonSha256 == CurrentSteamTrialCommonHash &&
+			profile.ValidatedInputKinds.SequenceEqual(["Turning", "Stamina", "TargetMemory"]) &&
+			profile.ValidatedAttackModes.Length == 0 &&
+			profile.SelectedTarget is { GlobalObject: "Ku0ZF1aWYsJ", Kind: "nJ5VIOJ8p8E", Index: "mpsVI6aspnF", PlayerKind: 1 };
+		bool trial = steamTrial || standaloneTrial || currentSteamTrial;
 		bool steamOfficial = profile is { ExternalProfile: true, ExperimentalTrial: false, ActuationValidated: true,
 			Id: SteamOfficialId, PunishComboValidated: false } &&
 			profile.Sha256 == SteamTrialHash && profile.CommonSha256 == SteamTrialCommonHash &&
 			profile.ValidatedInputKinds.SequenceEqual(["Turning", "Stamina", "TargetMemory"]) &&
 			profile.ValidatedAttackModes.Length == 0 &&
 			profile.SelectedTarget is { GlobalObject: "YPDrG8hKA8g", Kind: "iI1YjePn4ca", Index: "Al8Yj3jCFMN", PlayerKind: 1 };
-		bool steamLayout = steamTrial || steamOfficial;
+		bool steamLayout = steamTrial || steamOfficial || currentSteamTrial;
 		if (profile is null || frame is null || candidate is null || gate is null ||
 			!profile.ExternalProfile || !(profile.ActuationValidated && !profile.ExperimentalTrial || trial) ||
 			!profile.ValidatedInputKinds.Contains(nameof(LiveInputKind.TargetMemory), StringComparer.Ordinal) ||
@@ -83,6 +91,8 @@ public sealed class TargetMemoryWriter : IDisposable
 		if ((trial || steamOfficial) && (frame.Map != 190 || frame.PlayerName != "Raizen Kaen" ||
 			frame.Snapshot.Player.Id.Split(':').LastOrDefault() != "Raizen Kaen"))
 			return ActionResult.Rejected("Steam restrita a Raizen no mapa 190");
+		if (currentSteamTrial && candidate.Id.Split(':').LastOrDefault() != "KageSlayer")
+			return ActionResult.Rejected("Ensaio Steam restrito a KageSlayer; nenhum outro alvo autorizado");
 		if (trial && (_trialWriteCount >= 2 || _trialWriteCount == 1 && !_trialFirstConfirmed))
 			return ActionResult.Rejected("Ensaio local aguardando confirmação ou limite de duas escritas atingido");
 		if (trial && _trialWriteCount == 1 && frame.Snapshot.Target is not null)
@@ -164,8 +174,8 @@ public sealed class TargetMemoryWriter : IDisposable
 			int indexOffset = selected.Type.GetFieldByName(fields.Index)!.Offset;
 			if (kindOffset != 0 || indexOffset != sizeof(int))
 				return ActionResult.Rejected("Campos do alvo não são contíguos");
-			string historyKind = steamLayout ? "KXvYjpqD9OL" : "KZxYx3XP1Gd";
-			string historyIndex = steamLayout ? "hPDYjEat2my" : "MCWYxSJiKSc";
+			string historyKind = currentSteamTrial ? "EwDVI4LnAjl" : steamLayout ? "KXvYjpqD9OL" : "KZxYx3XP1Gd";
+			string historyIndex = currentSteamTrial ? "IMJVI173va0" : steamLayout ? "hPDYjEat2my" : "MCWYxSJiKSc";
 			if ((trial || steamOfficial) && (selected.Type.GetFieldByName(historyKind)?.Offset != 8 ||
 				selected.Type.GetFieldByName(historyIndex)?.Offset != 12 ||
 				selected.Type.GetFieldByName(historyKind)?.Type?.Name != "System.Int32" ||
