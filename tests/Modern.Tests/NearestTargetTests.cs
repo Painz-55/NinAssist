@@ -228,6 +228,21 @@ public class NearestTargetTests
             ValidatedAttackModes = ["Melee", "Fan"], PunishComboValidated = true, PunishComboRequiresTarget = true };
         Assert.True(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(integrated));
         Assert.False(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(integrated with { ValidatedAttackModes = ["Melee", "Fan", "HisuyFan"] }));
+		var steam = integrated with { Id = "LOCAL TRIAL Steam Raizen Turning Stamina 2026-11-26",
+			Sha256 = "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525",
+			CommonSha256 = "637E4DB9D08CA4C9285B80E36088C15AEF0D2547FA92D11F48980C2B821C3102",
+			ValidatedInputKinds = ["Turning", "Stamina"], ValidatedAttackModes = [], PunishComboValidated = false };
+		Assert.True(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(steam));
+		Assert.False(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(steam with { ValidatedInputKinds = ["Turning", "Stamina", "TargetMemory"] }));
+		Assert.False(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(steam with { CommonSha256 = new string('0', 64) }));
+		var targetOnly = steam with { Id = "LOCAL TRIAL Steam Raizen TargetMemory 2026-11-26", ValidatedInputKinds = ["TargetMemory"] };
+		Assert.True(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(targetOnly));
+		Assert.False(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(targetOnly with { ValidatedInputKinds = ["TargetMemory", "Stamina"] }));
+		var steamIntegrated = targetOnly with { Id = "LOCAL TRIAL Steam Integrated Raizen 2026-11-26",
+			ValidatedInputKinds = ["Turning", "Punish", "Attack", "Tool", "Follow", "Stamina", "CastTurning", "TargetMemory"],
+			ValidatedAttackModes = ["Melee", "Fan"], PunishComboValidated = true, PunishComboRequiresTarget = true };
+		Assert.True(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(steamIntegrated));
+		Assert.False(NinOnlineAutoAssist.App.LocalTrialPolicy.CanActuate(steamIntegrated with { ValidatedAttackModes = ["Melee", "Fan", "HisuyFan"] }));
     }
 
 }

@@ -30,6 +30,9 @@ public sealed class TargetMemoryWriter : IDisposable
 	private const string TestedHash = "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634";
 	private const string TrialHash = "8A163FC3D8FA13CCB3AA1FBABD9D1EBA1C829FBAE4ED14CC05AC688CAD328D50";
 	private const string TrialCommonHash = "43B99E8E93F063DFA1239978C7B41C51520E765CAB8D21499160FCA14CD01F62";
+	private const string SteamTrialHash = "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525";
+	private const string SteamTrialCommonHash = "637E4DB9D08CA4C9285B80E36088C15AEF0D2547FA92D11F48980C2B821C3102";
+	private const string SteamOfficialId = "Nin Online Steam 2026-11-26 (validated core; restricted)";
 
 	[DllImport("kernel32.dll", SetLastError = true)]
 	private static extern nint OpenProcess(uint access, bool inherit, int pid);
@@ -43,7 +46,18 @@ public sealed class TargetMemoryWriter : IDisposable
 	public ActionResult Select(int pid, GameMemoryProfile profile, LiveFrame frame, TargetInfo candidate, Func<bool> gate)
 	{
 		if (_faulted) return ActionResult.Rejected("Falha de escrita anterior; reconecte antes de tentar novamente");
-		bool trial = profile is { ExternalProfile: true, ExperimentalTrial: true, ActuationValidated: false } &&
+		bool steamTrial = profile is { ExternalProfile: true, ExperimentalTrial: true, ActuationValidated: false } &&
+			profile.Sha256 == SteamTrialHash && profile.CommonSha256 == SteamTrialCommonHash &&
+			(profile.Id == "LOCAL TRIAL Steam Raizen TargetMemory 2026-11-26" &&
+			 profile.PunishComboValidated == false &&
+			 profile.ValidatedInputKinds.SequenceEqual([nameof(LiveInputKind.TargetMemory)]) &&
+			 profile.ValidatedAttackModes.Length == 0 ||
+			 profile.Id == "LOCAL TRIAL Steam Integrated Raizen 2026-11-26" &&
+			 profile.PunishComboValidated == true && profile.PunishComboRequiresTarget == true &&
+			 profile.ValidatedInputKinds.SequenceEqual(["Turning", "Punish", "Attack", "Tool", "Follow", "Stamina", "CastTurning", "TargetMemory"]) &&
+			 profile.ValidatedAttackModes.SequenceEqual(["Melee", "Fan"])) &&
+			profile.SelectedTarget is { GlobalObject: "YPDrG8hKA8g", Kind: "iI1YjePn4ca", Index: "Al8Yj3jCFMN", PlayerKind: 1 };
+		bool standaloneTrial = profile is { ExternalProfile: true, ExperimentalTrial: true, ActuationValidated: false } &&
 			profile.Id.StartsWith("LOCAL TRIAL ", StringComparison.Ordinal) &&
 			profile.Sha256 == TrialHash && profile.CommonSha256 == TrialCommonHash &&
 			(profile.ValidatedInputKinds.SequenceEqual([nameof(LiveInputKind.TargetMemory)]) &&
@@ -52,15 +66,23 @@ public sealed class TargetMemoryWriter : IDisposable
 			 profile.ValidatedAttackModes.SequenceEqual(["Melee", "Fan"]) &&
 			 profile.PunishComboValidated == true && profile.PunishComboRequiresTarget == true) &&
 			profile.SelectedTarget is { GlobalObject: "F3miMmd6RE4", Kind: "dxFYxym9RQk", Index: "okyYx7CwjXs", PlayerKind: 1 };
+		bool trial = steamTrial || standaloneTrial;
+		bool steamOfficial = profile is { ExternalProfile: true, ExperimentalTrial: false, ActuationValidated: true,
+			Id: SteamOfficialId, PunishComboValidated: false } &&
+			profile.Sha256 == SteamTrialHash && profile.CommonSha256 == SteamTrialCommonHash &&
+			profile.ValidatedInputKinds.SequenceEqual(["Turning", "Stamina", "TargetMemory"]) &&
+			profile.ValidatedAttackModes.Length == 0 &&
+			profile.SelectedTarget is { GlobalObject: "YPDrG8hKA8g", Kind: "iI1YjePn4ca", Index: "Al8Yj3jCFMN", PlayerKind: 1 };
+		bool steamLayout = steamTrial || steamOfficial;
 		if (profile is null || frame is null || candidate is null || gate is null ||
 			!profile.ExternalProfile || !(profile.ActuationValidated && !profile.ExperimentalTrial || trial) ||
 			!profile.ValidatedInputKinds.Contains(nameof(LiveInputKind.TargetMemory), StringComparer.Ordinal) ||
-			!(profile.Sha256.Equals(TestedHash, StringComparison.OrdinalIgnoreCase) || trial) ||
+			!(profile.Sha256.Equals(TestedHash, StringComparison.OrdinalIgnoreCase) || trial || steamOfficial) ||
 			profile.SelectedTarget is not { PlayerKind: 1 } fields || IntPtr.Size != 8 || !gate())
 			return ActionResult.Rejected("Build, perfil ou autorização de escrita inválidos");
-		if (trial && (frame.Map != 190 || frame.PlayerName != "Raizen Kaen" ||
+		if ((trial || steamOfficial) && (frame.Map != 190 || frame.PlayerName != "Raizen Kaen" ||
 			frame.Snapshot.Player.Id.Split(':').LastOrDefault() != "Raizen Kaen"))
-			return ActionResult.Rejected("Ensaio local restrito a Raizen no mapa 190");
+			return ActionResult.Rejected("Steam restrita a Raizen no mapa 190");
 		if (trial && (_trialWriteCount >= 2 || _trialWriteCount == 1 && !_trialFirstConfirmed))
 			return ActionResult.Rejected("Ensaio local aguardando confirmação ou limite de duas escritas atingido");
 		if (trial && _trialWriteCount == 1 && frame.Snapshot.Target is not null)
@@ -142,24 +164,26 @@ public sealed class TargetMemoryWriter : IDisposable
 			int indexOffset = selected.Type.GetFieldByName(fields.Index)!.Offset;
 			if (kindOffset != 0 || indexOffset != sizeof(int))
 				return ActionResult.Rejected("Campos do alvo não são contíguos");
-			if (trial && (selected.Type.GetFieldByName("KZxYx3XP1Gd")?.Offset != 8 ||
-				selected.Type.GetFieldByName("MCWYxSJiKSc")?.Offset != 12 ||
-				selected.Type.GetFieldByName("KZxYx3XP1Gd")?.Type?.Name != "System.Int32" ||
-				selected.Type.GetFieldByName("MCWYxSJiKSc")?.Type?.Name != "System.Int32"))
+			string historyKind = steamLayout ? "KXvYjpqD9OL" : "KZxYx3XP1Gd";
+			string historyIndex = steamLayout ? "hPDYjEat2my" : "MCWYxSJiKSc";
+			if ((trial || steamOfficial) && (selected.Type.GetFieldByName(historyKind)?.Offset != 8 ||
+				selected.Type.GetFieldByName(historyIndex)?.Offset != 12 ||
+				selected.Type.GetFieldByName(historyKind)?.Type?.Name != "System.Int32" ||
+				selected.Type.GetFieldByName(historyIndex)?.Type?.Name != "System.Int32"))
 				return ActionResult.Rejected("Layout do histórico do alvo mudou");
 			// ClrMD's instance offsets start after the 8-byte method-table pointer on x64.
 			ulong kindAddress = selected.Address + (ulong)IntPtr.Size;
 			{
-				int length = trial ? 16 : 8;
+				int length = trial || steamOfficial ? 16 : 8;
 				byte[] before = new byte[length];
 				if (!ReadProcessMemory(_handle, (nint)kindAddress, before, (nuint)length, out nuint read) || read != (nuint)length ||
 					BitConverter.ToInt32(before, 0) != selected.ReadField<int>(fields.Kind) ||
 					BitConverter.ToInt32(before, 4) != selected.ReadField<int>(fields.Index) ||
-					(trial && (BitConverter.ToInt32(before, 8) != selected.ReadField<int>("KZxYx3XP1Gd") ||
-						BitConverter.ToInt32(before, 12) != selected.ReadField<int>("MCWYxSJiKSc"))) ||
+					((trial || steamOfficial) && (BitConverter.ToInt32(before, 8) != selected.ReadField<int>(historyKind) ||
+						BitConverter.ToInt32(before, 12) != selected.ReadField<int>(historyIndex))) ||
 					selectedField.ReadObject(domain).Address != selected.Address || !gate())
 					return ActionResult.Rejected("Alvo ou autorização mudou antes da escrita");
-				if (trial && (frame.Snapshot.Target?.Id is { } currentId && currentId !=
+				if ((trial || steamOfficial) && (frame.Snapshot.Target?.Id is { } currentId && currentId !=
 					$"{BitConverter.ToInt32(before, 4)}:{frame.TargetName}" ||
 					BitConverter.ToInt32(before, 0) is not (0 or 1) ||
 					(BitConverter.ToInt32(before, 0) == 0 && BitConverter.ToInt32(before, 4) != 0)))
@@ -187,8 +211,8 @@ public sealed class TargetMemoryWriter : IDisposable
 					_faulted = true;
 					return ActionResult.Rejected("Confirmação imediata falhou; desative e reconecte");
 				}
-				if (trial && (selected.ReadField<int>("KZxYx3XP1Gd") != BitConverter.ToInt32(before, 8) ||
-					selected.ReadField<int>("MCWYxSJiKSc") != BitConverter.ToInt32(before, 12)))
+				if ((trial || steamOfficial) && (selected.ReadField<int>(historyKind) != BitConverter.ToInt32(before, 8) ||
+					selected.ReadField<int>(historyIndex) != BitConverter.ToInt32(before, 12)))
 				{
 					_faulted = true;
 					return ActionResult.Rejected("Histórico do alvo mudou; reconecte");

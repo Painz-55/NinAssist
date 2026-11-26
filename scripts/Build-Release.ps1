@@ -7,6 +7,18 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+$packagedProfiles = Get-Content -Raw -LiteralPath (Join-Path $root 'compatibility\package-profiles.json') | ConvertFrom-Json
+if (@($packagedProfiles.profiles | Where-Object { $_.ExperimentalTrial -eq $true -or $_.Id -like 'LOCAL TRIAL *' }).Count -ne 0) {
+    throw 'Manifesto LOCAL TRIAL não pode entrar em uma release.'
+}
+if (@($packagedProfiles.profiles | Where-Object {
+    $_.Sha256 -eq '349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525' -and
+    ($_.CommonSha256 -ne '637E4DB9D08CA4C9285B80E36088C15AEF0D2547FA92D11F48980C2B821C3102' -or
+     $_.Id -ne 'Nin Online Steam 2026-11-26 (validated core; restricted)' -or
+     $_.ActuationValidated -ne $true -or
+     (@($_.ValidatedInputKinds) -join ',') -ne 'Turning,Stamina,TargetMemory' -or
+     @($_.ValidatedAttackModes).Count -ne 0)
+}).Count -ne 0) { throw 'Perfil Steam do pacote excede a validação restrita.' }
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Use uma versão estável nova: 1.1.0, 1.1.1 etc.' }
 if ($RepositoryUrl -notmatch '^https://github\.com/[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_.-]{1,100}/?$') { throw 'Informe a URL HTTPS do repositório PÚBLICO de releases, sem token.' }
 if (-not $FirebaseConfigPath) { $FirebaseConfigPath = Join-Path $root 'firebase.config.json' }

@@ -528,7 +528,7 @@ public sealed class SignedProfileCatalogTests
         {
             var signed = Sign(new { schema = 1, profiles = new[] { profile } });
             return SignedProfileCatalog.VerifyAndSelect(signed.Payload, signed.Signature, signed.PublicKey,
-                p.Sha256, p.CommonSha256);
+                profile.Sha256, profile.CommonSha256);
         }
         Assert.NotNull(Select(p));
         Assert.Throws<InvalidOperationException>(() => Select(p with { ValidatedInputKinds = ["TargetMemory", "Attack"] }));
@@ -540,5 +540,31 @@ public sealed class SignedProfileCatalogTests
         Assert.NotNull(Select(integrated));
         Assert.Throws<InvalidOperationException>(() => Select(integrated with { ValidatedAttackModes = ["Melee", "Fan", "HisuyFan"] }));
         Assert.Throws<InvalidOperationException>(() => Select(integrated with { PunishComboRequiresTarget = false }));
+		var steam = p with { Id = "LOCAL TRIAL Steam Raizen Turning Stamina 2026-11-26",
+			Sha256 = "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525",
+			CommonSha256 = "637E4DB9D08CA4C9285B80E36088C15AEF0D2547FA92D11F48980C2B821C3102",
+			ValidatedInputKinds = ["Turning", "Stamina"], ValidatedAttackModes = [], PunishComboValidated = false,
+			SelectedTarget = new("YPDrG8hKA8g", "iI1YjePn4ca", "Al8Yj3jCFMN", 1) };
+		Assert.NotNull(Select(steam));
+		Assert.Throws<InvalidOperationException>(() => Select(steam with { ValidatedInputKinds = ["Turning", "Stamina", "Attack"] }));
+		Assert.Throws<InvalidOperationException>(() => Select(steam with { ValidatedInputKinds = ["Turning", "Stamina", "TargetMemory"] }));
+		var steamTarget = steam with { Id = "LOCAL TRIAL Steam Raizen TargetMemory 2026-11-26", ValidatedInputKinds = ["TargetMemory"] };
+		Assert.NotNull(Select(steamTarget));
+		Assert.Throws<InvalidOperationException>(() => Select(steamTarget with { SelectedTarget = steamTarget.SelectedTarget! with { Index = "other" } }));
+		Assert.Throws<InvalidOperationException>(() => Select(steamTarget with { ValidatedInputKinds = ["TargetMemory", "Attack"] }));
+		var steamIntegrated = steamTarget with { Id = "LOCAL TRIAL Steam Integrated Raizen 2026-11-26",
+			ValidatedInputKinds = ["Turning", "Punish", "Attack", "Tool", "Follow", "Stamina", "CastTurning", "TargetMemory"],
+			ValidatedAttackModes = ["Melee", "Fan"], PunishComboValidated = true, PunishComboRequiresTarget = true };
+		Assert.NotNull(Select(steamIntegrated));
+		Assert.Throws<InvalidOperationException>(() => Select(steamIntegrated with { ValidatedAttackModes = ["Melee", "Fan", "HisuyFan"] }));
+		Assert.Throws<InvalidOperationException>(() => Select(steamIntegrated with { PunishComboRequiresTarget = false }));
+		var official = steamTarget with { Id = "Nin Online Steam 2026-11-26 (validated core; restricted)",
+			ExperimentalTrial = false, ActuationValidated = true,
+			ValidatedInputKinds = ["Turning", "Stamina", "TargetMemory"] };
+		Assert.NotNull(Select(official));
+		Assert.Throws<InvalidOperationException>(() => Select(official with { ValidatedInputKinds = ["Turning", "Stamina", "TargetMemory", "Attack"] }));
+		Assert.Throws<InvalidOperationException>(() => Select(official with { ValidatedAttackModes = ["Fan"] }));
+		Assert.Throws<InvalidOperationException>(() => Select(official with { SelectedTarget = official.SelectedTarget! with { Index = "other" } }));
+		Assert.Throws<InvalidOperationException>(() => Select(official with { CommonSha256 = new string('0', 64) }));
     }
 }

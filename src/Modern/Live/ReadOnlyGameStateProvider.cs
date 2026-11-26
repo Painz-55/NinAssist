@@ -588,6 +588,7 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
 			"3B1AAF914AE0EA2268CEE6C6E95960C2A04CDAC383E0C540D98752B12EF96842" => ("wMWLcvW2ArKRj9nhY3bg.TyDWRPW2l05BDoekEyUt", "xgcWweIHSdJ"),
 			"C3F7DF26A0C00D72291DEFC67F219BD54909AE9062160329DE4AD6956110CB72" => ("bfh79MUAUg04A0AkOIDe.XueWakUAoTIroqRVa3KM", "AwCUSQuJJUb"),
 			"5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634" => ("Nvx4GuISaVJTgraaxmuY.ddoPbRISG5UMbcXPLWJC", "rU0I2D0I0yb"),
+			"349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525" => ("qM9Z8LrxmrrBo1XcjmiL.ckkW2irxY8qGNKVIijDw", "NaHWqrTa5P1"),
 			_ => ("", ""),
 		};
 		if (tuple.Item1.Length == 0)
@@ -639,6 +640,11 @@ public sealed class ReadOnlyGameStateProvider : IGameStateProvider, IDisposable
 				RenderViewObservation renderViewObservation = ((map == 190) ? OverlayProjection.CalibratedMap190(x, y, gridWidth.GetValueOrDefault(), gridHeight.GetValueOrDefault(), num3, num4) : null);
 				RenderViewStatus = (((object)renderViewObservation == null) ? "Câmera visual não calibrada neste mapa" : "Câmera visual calibrada no mapa 190");
 				return renderViewObservation;
+			}
+			if (Profile.Sha256 == "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525")
+			{
+				RenderViewStatus = map == 190 ? "View Steam candidata; alinhamento visual pendente" : "View Steam não calibrada neste mapa";
+				return map == 190 ? new RenderViewObservation(num, num2, num3, num4) : null;
 			}
 			RenderViewStatus = "View observada";
 			return new RenderViewObservation(num, num2, num3, num4);

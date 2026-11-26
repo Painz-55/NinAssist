@@ -102,8 +102,41 @@ public static class SignedProfileCatalog
                 selected.GetProperty("Index").GetString() == "okyYx7CwjXs";
             if (trial && gameHash == "8A163FC3D8FA13CCB3AA1FBABD9D1EBA1C829FBAE4ED14CC05AC688CAD328D50" && !targetTrial)
                 throw new InvalidOperationException("Current build trial restricted to exact target input");
+            if (trial && gameHash == "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525" &&
+                (commonHash != "637E4DB9D08CA4C9285B80E36088C15AEF0D2547FA92D11F48980C2B821C3102" ||
+                 !((element.GetProperty("Id").GetString() == "LOCAL TRIAL Steam Raizen Turning Stamina 2026-11-26" &&
+                    actions.EnumerateArray().Select(a => a.GetString()).SequenceEqual(new[] { "Turning", "Stamina" }) ||
+                    element.GetProperty("Id").GetString() == "LOCAL TRIAL Steam Raizen TargetMemory 2026-11-26" &&
+                    actions.EnumerateArray().Select(a => a.GetString()).SequenceEqual(new[] { "TargetMemory" })) &&
+                   element.GetProperty("ValidatedAttackModes").GetArrayLength() == 0 &&
+                   !element.GetProperty("PunishComboValidated").GetBoolean() ||
+                   element.GetProperty("Id").GetString() == "LOCAL TRIAL Steam Integrated Raizen 2026-11-26" &&
+                   actions.EnumerateArray().Select(a => a.GetString()).SequenceEqual(new[] { "Turning", "Punish", "Attack", "Tool", "Follow", "Stamina", "CastTurning", "TargetMemory" }) &&
+                   element.GetProperty("ValidatedAttackModes").EnumerateArray().Select(a => a.GetString()).SequenceEqual(new[] { "Melee", "Fan" }) &&
+                   element.GetProperty("PunishComboValidated").GetBoolean() && element.GetProperty("PunishComboRequiresTarget").GetBoolean()) ||
+                 selected.ValueKind != JsonValueKind.Object ||
+                 selected.GetProperty("GlobalObject").GetString() != "YPDrG8hKA8g" ||
+                 selected.GetProperty("Kind").GetString() != "iI1YjePn4ca" ||
+                 selected.GetProperty("Index").GetString() != "Al8Yj3jCFMN"))
+                throw new InvalidOperationException("Steam local trial restricted to exact signed schema and input list");
+            var steamOfficial = !trial && element.GetProperty("ActuationValidated").GetBoolean() &&
+                gameHash == "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525" &&
+                commonHash == "637E4DB9D08CA4C9285B80E36088C15AEF0D2547FA92D11F48980C2B821C3102" &&
+                element.GetProperty("Id").GetString() == "Nin Online Steam 2026-11-26 (validated core; restricted)" &&
+                actions.EnumerateArray().Select(a => a.GetString()).SequenceEqual(new[] { "Turning", "Stamina", "TargetMemory" }) &&
+                element.GetProperty("ValidatedAttackModes").GetArrayLength() == 0 &&
+                !element.GetProperty("PunishComboValidated").GetBoolean() &&
+                selected.ValueKind == JsonValueKind.Object && selected.GetProperty("PlayerKind").GetInt32() == 1 &&
+                selected.GetProperty("GlobalObject").GetString() == "YPDrG8hKA8g" &&
+                selected.GetProperty("Kind").GetString() == "iI1YjePn4ca" &&
+                selected.GetProperty("Index").GetString() == "Al8Yj3jCFMN";
+            if (!trial && element.GetProperty("ActuationValidated").GetBoolean() &&
+                gameHash == "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525" && !steamOfficial)
+                throw new InvalidOperationException("Steam official profile must be restricted to validated core and exact target schema");
             if (actions.EnumerateArray().Any(a => a.GetString() == "TargetMemory") &&
-                (gameHash != "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634" && !targetTrial ||
+                (gameHash != "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634" && !targetTrial && !steamOfficial &&
+                 !(trial && gameHash == "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525" &&
+                   element.GetProperty("Id").GetString() is "LOCAL TRIAL Steam Raizen TargetMemory 2026-11-26" or "LOCAL TRIAL Steam Integrated Raizen 2026-11-26") ||
                  selected.ValueKind != JsonValueKind.Object || selected.GetProperty("PlayerKind").GetInt32() != 1))
                 throw new InvalidOperationException("TargetMemory requires validated build and player schema");
             if (!element.GetProperty("ActuationValidated").GetBoolean() && !trial && actions.GetArrayLength() != 0)

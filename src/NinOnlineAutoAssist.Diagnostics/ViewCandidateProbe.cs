@@ -34,6 +34,8 @@ public static class ViewCandidateProbe
                 => (Owner: "bfh79MUAUg04A0AkOIDe.XueWakUAoTIroqRVa3KM", Fields: new[] { "uFEUSWgHkBt", "AwCUSQuJJUb" }),
             "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634"
                 => (Owner: "Nvx4GuISaVJTgraaxmuY.ddoPbRISG5UMbcXPLWJC", Fields: new[] { "VlSI2dlUpTI", "rU0I2D0I0yb" }),
+            "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525"
+                => (Owner: "qM9Z8LrxmrrBo1XcjmiL.ckkW2irxY8qGNKVIijDw", Fields: new[] { "yvlWCSGQI05", "NaHWqrTa5P1" }),
             _ => throw new InvalidOperationException("View owner is build-specific; no fallback")
         };
         using var target = DataTarget.AttachToProcess(pid, suspend: false);

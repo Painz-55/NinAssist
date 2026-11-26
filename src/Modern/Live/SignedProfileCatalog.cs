@@ -207,8 +207,41 @@ public static class SignedProfileCatalog
 				property3.GetProperty("Index").GetString() == "okyYx7CwjXs";
 			if (flag4 && text == "8A163FC3D8FA13CCB3AA1FBABD9D1EBA1C829FBAE4ED14CC05AC688CAD328D50" && !targetTrial)
 				throw new InvalidOperationException("Local trial restricted to exact TargetMemory build and fields");
+			if (flag4 && text == "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525" &&
+				(text2 != "637E4DB9D08CA4C9285B80E36088C15AEF0D2547FA92D11F48980C2B821C3102" ||
+				!((item.GetProperty("Id").GetString() == "LOCAL TRIAL Steam Raizen Turning Stamina 2026-11-26" &&
+				   property4.EnumerateArray().Select(a => a.GetString()).SequenceEqual(new[] { "Turning", "Stamina" }) ||
+				   item.GetProperty("Id").GetString() == "LOCAL TRIAL Steam Raizen TargetMemory 2026-11-26" &&
+				   property4.EnumerateArray().Select(a => a.GetString()).SequenceEqual(new[] { "TargetMemory" })) &&
+				  item.GetProperty("ValidatedAttackModes").GetArrayLength() == 0 &&
+				  !item.GetProperty("PunishComboValidated").GetBoolean() ||
+				  item.GetProperty("Id").GetString() == "LOCAL TRIAL Steam Integrated Raizen 2026-11-26" &&
+				  property4.EnumerateArray().Select(a => a.GetString()).SequenceEqual(new[] { "Turning", "Punish", "Attack", "Tool", "Follow", "Stamina", "CastTurning", "TargetMemory" }) &&
+				  item.GetProperty("ValidatedAttackModes").EnumerateArray().Select(a => a.GetString()).SequenceEqual(new[] { "Melee", "Fan" }) &&
+				  item.GetProperty("PunishComboValidated").GetBoolean() && item.GetProperty("PunishComboRequiresTarget").GetBoolean()) ||
+				property3.ValueKind != JsonValueKind.Object ||
+				property3.GetProperty("GlobalObject").GetString() != "YPDrG8hKA8g" ||
+				property3.GetProperty("Kind").GetString() != "iI1YjePn4ca" ||
+				property3.GetProperty("Index").GetString() != "Al8Yj3jCFMN"))
+				throw new InvalidOperationException("Steam local trial restricted to exact signed schema and input list");
+			bool steamOfficial = !flag4 && item.GetProperty("ActuationValidated").GetBoolean() &&
+				text == "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525" &&
+				text2 == "637E4DB9D08CA4C9285B80E36088C15AEF0D2547FA92D11F48980C2B821C3102" &&
+				item.GetProperty("Id").GetString() == "Nin Online Steam 2026-11-26 (validated core; restricted)" &&
+				property4.EnumerateArray().Select(a => a.GetString()).SequenceEqual(new[] { "Turning", "Stamina", "TargetMemory" }) &&
+				item.GetProperty("ValidatedAttackModes").GetArrayLength() == 0 &&
+				!item.GetProperty("PunishComboValidated").GetBoolean() &&
+				property3.ValueKind == JsonValueKind.Object && property3.GetProperty("PlayerKind").GetInt32() == 1 &&
+				property3.GetProperty("GlobalObject").GetString() == "YPDrG8hKA8g" &&
+				property3.GetProperty("Kind").GetString() == "iI1YjePn4ca" &&
+				property3.GetProperty("Index").GetString() == "Al8Yj3jCFMN";
+			if (!flag4 && item.GetProperty("ActuationValidated").GetBoolean() &&
+				text == "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525" && !steamOfficial)
+				throw new InvalidOperationException("Steam official profile must be restricted to validated core and exact target schema");
 			if (property4.EnumerateArray().Any(a => a.GetString() == "TargetMemory") &&
-				(text != "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634" && !targetTrial ||
+				(text != "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634" && !targetTrial && !steamOfficial &&
+				 !(flag4 && text == "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525" &&
+				   item.GetProperty("Id").GetString() is "LOCAL TRIAL Steam Raizen TargetMemory 2026-11-26" or "LOCAL TRIAL Steam Integrated Raizen 2026-11-26") ||
 				 property3.ValueKind != JsonValueKind.Object || property3.GetProperty("PlayerKind").GetInt32() != 1))
 				throw new InvalidOperationException("TargetMemory requires the validated exact game build and player schema");
 			if (!item.GetProperty("ActuationValidated").GetBoolean() && !flag4 && property4.GetArrayLength() != 0)

@@ -860,9 +860,13 @@ public sealed class LiveContext : IDisposable
 		{
 			return new SafetyDecision(Allowed: false, "Configuração do personagem ainda não verificada; inputs OFF");
 		}
-		if (Provider.Profile.ExperimentalTrial && (liveFrame.Map != 190 || liveFrame.PlayerName != "Raizen Kaen"))
+		if ((Provider.Profile.ExperimentalTrial ||
+			Provider.Profile is { Id: "Nin Online Steam 2026-11-26 (validated core; restricted)",
+				Sha256: "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525",
+				CommonSha256: "637E4DB9D08CA4C9285B80E36088C15AEF0D2547FA92D11F48980C2B821C3102" }) &&
+			(liveFrame.Map != 190 || liveFrame.PlayerName != "Raizen Kaen"))
 		{
-			return new SafetyDecision(Allowed: false, "Ensaio local restrito a Raizen no mapa 190");
+			return new SafetyDecision(Allowed: false, "Perfil restrito a Raizen no mapa 190");
 		}
 		bool flag = Provider.Profile.ExperimentalTrial && liveFrame.Snapshot.Player.Facing == Direction.None;
 		if (flag)
