@@ -35,6 +35,7 @@ public sealed class TargetMemoryWriter : IDisposable
 	private const string SteamOfficialId = "Nin Online Steam 2026-11-26 (validated core; restricted)";
 	private const string CurrentSteamTrialHash = "57668CBF395C8A503ABA85C8D7181D5712701F7C88ADF5B6EA49EF54DCEEEC89";
 	private const string CurrentSteamTrialCommonHash = "4DB42166C9D1919083E5B03757B9E8D166145E9C39A410AC22415F1D71171DEB";
+	private const string CurrentSteamOfficialId = "Nin Online Steam 57668CBF (validated core; restricted)";
 
 	[DllImport("kernel32.dll", SetLastError = true)]
 	private static extern nint OpenProcess(uint access, bool inherit, int pid);
@@ -81,14 +82,21 @@ public sealed class TargetMemoryWriter : IDisposable
 			profile.ValidatedInputKinds.SequenceEqual(["Turning", "Stamina", "TargetMemory"]) &&
 			profile.ValidatedAttackModes.Length == 0 &&
 			profile.SelectedTarget is { GlobalObject: "YPDrG8hKA8g", Kind: "iI1YjePn4ca", Index: "Al8Yj3jCFMN", PlayerKind: 1 };
-		bool steamLayout = steamTrial || steamOfficial || currentSteamTrial;
+		bool currentSteamOfficial = profile is { ExternalProfile: true, ExperimentalTrial: false, ActuationValidated: true,
+			Id: CurrentSteamOfficialId, PunishComboValidated: false } &&
+			profile.Sha256 == CurrentSteamTrialHash && profile.CommonSha256 == CurrentSteamTrialCommonHash &&
+			profile.ValidatedInputKinds.SequenceEqual(["Turning", "Stamina", "TargetMemory"]) &&
+			profile.ValidatedAttackModes.Length == 0 &&
+			profile.SelectedTarget is { GlobalObject: "Ku0ZF1aWYsJ", Kind: "nJ5VIOJ8p8E", Index: "mpsVI6aspnF", PlayerKind: 1 };
+		bool restrictedLayout = trial || steamOfficial || currentSteamOfficial;
+		bool steamLayout = steamTrial || steamOfficial || currentSteamTrial || currentSteamOfficial;
 		if (profile is null || frame is null || candidate is null || gate is null ||
 			!profile.ExternalProfile || !(profile.ActuationValidated && !profile.ExperimentalTrial || trial) ||
 			!profile.ValidatedInputKinds.Contains(nameof(LiveInputKind.TargetMemory), StringComparer.Ordinal) ||
-			!(profile.Sha256.Equals(TestedHash, StringComparison.OrdinalIgnoreCase) || trial || steamOfficial) ||
+			!(profile.Sha256.Equals(TestedHash, StringComparison.OrdinalIgnoreCase) || trial || steamOfficial || currentSteamOfficial) ||
 			profile.SelectedTarget is not { PlayerKind: 1 } fields || IntPtr.Size != 8 || !gate())
 			return ActionResult.Rejected("Build, perfil ou autorização de escrita inválidos");
-		if ((trial || steamOfficial) && (frame.Map != 190 || frame.PlayerName != "Raizen Kaen" ||
+		if (restrictedLayout && (frame.Map != 190 || frame.PlayerName != "Raizen Kaen" ||
 			frame.Snapshot.Player.Id.Split(':').LastOrDefault() != "Raizen Kaen"))
 			return ActionResult.Rejected("Steam restrita a Raizen no mapa 190");
 		if (currentSteamTrial && candidate.Id.Split(':').LastOrDefault() != "KageSlayer")
@@ -174,9 +182,9 @@ public sealed class TargetMemoryWriter : IDisposable
 			int indexOffset = selected.Type.GetFieldByName(fields.Index)!.Offset;
 			if (kindOffset != 0 || indexOffset != sizeof(int))
 				return ActionResult.Rejected("Campos do alvo não são contíguos");
-			string historyKind = currentSteamTrial ? "EwDVI4LnAjl" : steamLayout ? "KXvYjpqD9OL" : "KZxYx3XP1Gd";
-			string historyIndex = currentSteamTrial ? "IMJVI173va0" : steamLayout ? "hPDYjEat2my" : "MCWYxSJiKSc";
-			if ((trial || steamOfficial) && (selected.Type.GetFieldByName(historyKind)?.Offset != 8 ||
+			string historyKind = currentSteamTrial || currentSteamOfficial ? "EwDVI4LnAjl" : steamLayout ? "KXvYjpqD9OL" : "KZxYx3XP1Gd";
+			string historyIndex = currentSteamTrial || currentSteamOfficial ? "IMJVI173va0" : steamLayout ? "hPDYjEat2my" : "MCWYxSJiKSc";
+			if (restrictedLayout && (selected.Type.GetFieldByName(historyKind)?.Offset != 8 ||
 				selected.Type.GetFieldByName(historyIndex)?.Offset != 12 ||
 				selected.Type.GetFieldByName(historyKind)?.Type?.Name != "System.Int32" ||
 				selected.Type.GetFieldByName(historyIndex)?.Type?.Name != "System.Int32"))
@@ -184,16 +192,16 @@ public sealed class TargetMemoryWriter : IDisposable
 			// ClrMD's instance offsets start after the 8-byte method-table pointer on x64.
 			ulong kindAddress = selected.Address + (ulong)IntPtr.Size;
 			{
-				int length = trial || steamOfficial ? 16 : 8;
+				int length = restrictedLayout ? 16 : 8;
 				byte[] before = new byte[length];
 				if (!ReadProcessMemory(_handle, (nint)kindAddress, before, (nuint)length, out nuint read) || read != (nuint)length ||
 					BitConverter.ToInt32(before, 0) != selected.ReadField<int>(fields.Kind) ||
 					BitConverter.ToInt32(before, 4) != selected.ReadField<int>(fields.Index) ||
-					((trial || steamOfficial) && (BitConverter.ToInt32(before, 8) != selected.ReadField<int>(historyKind) ||
+					(restrictedLayout && (BitConverter.ToInt32(before, 8) != selected.ReadField<int>(historyKind) ||
 						BitConverter.ToInt32(before, 12) != selected.ReadField<int>(historyIndex))) ||
 					selectedField.ReadObject(domain).Address != selected.Address || !gate())
 					return ActionResult.Rejected("Alvo ou autorização mudou antes da escrita");
-				if ((trial || steamOfficial) && (frame.Snapshot.Target?.Id is { } currentId && currentId !=
+				if (restrictedLayout && (frame.Snapshot.Target?.Id is { } currentId && currentId !=
 					$"{BitConverter.ToInt32(before, 4)}:{frame.TargetName}" ||
 					BitConverter.ToInt32(before, 0) is not (0 or 1) ||
 					(BitConverter.ToInt32(before, 0) == 0 && BitConverter.ToInt32(before, 4) != 0)))
@@ -221,7 +229,7 @@ public sealed class TargetMemoryWriter : IDisposable
 					_faulted = true;
 					return ActionResult.Rejected("Confirmação imediata falhou; desative e reconecte");
 				}
-				if ((trial || steamOfficial) && (selected.ReadField<int>(historyKind) != BitConverter.ToInt32(before, 8) ||
+				if (restrictedLayout && (selected.ReadField<int>(historyKind) != BitConverter.ToInt32(before, 8) ||
 					selected.ReadField<int>(historyIndex) != BitConverter.ToInt32(before, 12)))
 				{
 					_faulted = true;

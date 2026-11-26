@@ -7,6 +7,23 @@ namespace Modern.Tests;
 public class SteamOfficialCatalogTests
 {
     [Fact]
+    public void CurrentSteamPackagedProfileHasValidSignatureAndRestrictedCore()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "compatibility", "package-profiles.json");
+        var profile = SignedProfileCatalog.VerifyAndSelect(File.ReadAllBytes(path),
+            Convert.FromBase64String(File.ReadAllText(path + ".sig").Trim()), SignedProfileCatalog.PublicKey,
+            "57668CBF395C8A503ABA85C8D7181D5712701F7C88ADF5B6EA49EF54DCEEEC89",
+            "4DB42166C9D1919083E5B03757B9E8D166145E9C39A410AC22415F1D71171DEB");
+        Assert.NotNull(profile);
+        Assert.Equal("Nin Online Steam 57668CBF (validated core; restricted)", profile.Id);
+        Assert.Equal(["Turning", "Stamina", "TargetMemory"], profile.ValidatedInputKinds);
+        Assert.Empty(profile.ValidatedAttackModes);
+        Assert.False(profile.PunishComboValidated);
+        Assert.Equal("JLqVBnE8AGm", profile.Facing);
+        Assert.Equal("LVaVBYIhYqD", profile.Village);
+    }
+
+    [Fact]
     public void NewSteamTrialRequiresExactBuildTargetAndRestrictedInputs()
     {
         var profile = GameMemoryProfile.Updated20261104 with

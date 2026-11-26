@@ -236,6 +236,20 @@ public static class SignedProfileCatalog
 				property3.GetProperty("Index").GetString() == "mpsVI6aspnF";
 			if (flag4 && text == "57668CBF395C8A503ABA85C8D7181D5712701F7C88ADF5B6EA49EF54DCEEEC89" && !currentSteamTrial)
 				throw new InvalidOperationException("Current Steam trial restricted to observed target schema and core inputs");
+			bool currentSteamOfficial = !flag4 && item.GetProperty("ActuationValidated").GetBoolean() &&
+				text == "57668CBF395C8A503ABA85C8D7181D5712701F7C88ADF5B6EA49EF54DCEEEC89" &&
+				text2 == "4DB42166C9D1919083E5B03757B9E8D166145E9C39A410AC22415F1D71171DEB" &&
+				item.GetProperty("Id").GetString() == "Nin Online Steam 57668CBF (validated core; restricted)" &&
+				property4.EnumerateArray().Select(a => a.GetString()).SequenceEqual(new[] { "Turning", "Stamina", "TargetMemory" }) &&
+				item.GetProperty("ValidatedAttackModes").GetArrayLength() == 0 &&
+				!item.GetProperty("PunishComboValidated").GetBoolean() &&
+				property3.ValueKind == JsonValueKind.Object && property3.GetProperty("PlayerKind").GetInt32() == 1 &&
+				property3.GetProperty("GlobalObject").GetString() == "Ku0ZF1aWYsJ" &&
+				property3.GetProperty("Kind").GetString() == "nJ5VIOJ8p8E" &&
+				property3.GetProperty("Index").GetString() == "mpsVI6aspnF";
+			if (!flag4 && item.GetProperty("ActuationValidated").GetBoolean() &&
+				text == "57668CBF395C8A503ABA85C8D7181D5712701F7C88ADF5B6EA49EF54DCEEEC89" && !currentSteamOfficial)
+				throw new InvalidOperationException("Current Steam official profile must be restricted to validated core and exact target schema");
 			bool steamOfficial = !flag4 && item.GetProperty("ActuationValidated").GetBoolean() &&
 				text == "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525" &&
 				text2 == "637E4DB9D08CA4C9285B80E36088C15AEF0D2547FA92D11F48980C2B821C3102" &&
@@ -251,7 +265,7 @@ public static class SignedProfileCatalog
 				text == "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525" && !steamOfficial)
 				throw new InvalidOperationException("Steam official profile must be restricted to validated core and exact target schema");
 			if (property4.EnumerateArray().Any(a => a.GetString() == "TargetMemory") &&
-				(text != "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634" && !targetTrial && !steamOfficial && !currentSteamTrial &&
+				(text != "5F1A25276A4FF5AC42C58E55B491191ECD0240F1C8202190A57E199CA4F59634" && !targetTrial && !steamOfficial && !currentSteamTrial && !currentSteamOfficial &&
 				 !(flag4 && text == "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525" &&
 				   item.GetProperty("Id").GetString() is "LOCAL TRIAL Steam Raizen TargetMemory 2026-11-26" or "LOCAL TRIAL Steam Integrated Raizen 2026-11-26") ||
 				 property3.ValueKind != JsonValueKind.Object || property3.GetProperty("PlayerKind").GetInt32() != 1))

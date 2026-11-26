@@ -866,7 +866,10 @@ public sealed class LiveContext : IDisposable
 		if ((Provider.Profile.ExperimentalTrial ||
 			Provider.Profile is { Id: "Nin Online Steam 2026-11-26 (validated core; restricted)",
 				Sha256: "349E3190B1D5CB27E10E8CB88AD2402857567989BB069115B80B264060DAB525",
-				CommonSha256: "637E4DB9D08CA4C9285B80E36088C15AEF0D2547FA92D11F48980C2B821C3102" }) &&
+				CommonSha256: "637E4DB9D08CA4C9285B80E36088C15AEF0D2547FA92D11F48980C2B821C3102" } ||
+			Provider.Profile is { Id: "Nin Online Steam 57668CBF (validated core; restricted)",
+				Sha256: "57668CBF395C8A503ABA85C8D7181D5712701F7C88ADF5B6EA49EF54DCEEEC89",
+				CommonSha256: "4DB42166C9D1919083E5B03757B9E8D166145E9C39A410AC22415F1D71171DEB" }) &&
 			(liveFrame.Map != 190 || liveFrame.PlayerName != "Raizen Kaen"))
 		{
 			return new SafetyDecision(Allowed: false, "Perfil restrito a Raizen no mapa 190");

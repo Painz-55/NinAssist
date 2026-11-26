@@ -260,6 +260,12 @@ public class NearestTargetTests
 			initialFrame, otherPlayer, () => true).Accepted);
 		Assert.False(newSteamWriter.Select(-1, newSteam with { CommonSha256 = new string('0', 64) },
 			initialFrame, otherPlayer, () => true).Accepted);
+		var newOfficial = newSteam with { Id = "Nin Online Steam 57668CBF (validated core; restricted)",
+			ExperimentalTrial = false, ActuationValidated = true };
+		Assert.False(newSteamWriter.Select(-1, newOfficial with { ValidatedInputKinds = ["Turning", "Stamina", "TargetMemory", "Follow"] },
+			initialFrame, otherPlayer, () => throw new Exception("gate called")).Accepted);
+		Assert.False(newSteamWriter.Select(-1, newOfficial with { SelectedTarget = newOfficial.SelectedTarget! with { Index = "wrong" } },
+			initialFrame, otherPlayer, () => throw new Exception("gate called")).Accepted);
     }
 
 }

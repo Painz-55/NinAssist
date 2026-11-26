@@ -19,6 +19,18 @@ if (@($packagedProfiles.profiles | Where-Object {
      (@($_.ValidatedInputKinds) -join ',') -ne 'Turning,Stamina,TargetMemory' -or
      @($_.ValidatedAttackModes).Count -ne 0)
 }).Count -ne 0) { throw 'Perfil Steam do pacote excede a validação restrita.' }
+$currentSteam = @($packagedProfiles.profiles | Where-Object { $_.Sha256 -eq '57668CBF395C8A503ABA85C8D7181D5712701F7C88ADF5B6EA49EF54DCEEEC89' })
+if ($currentSteam.Count -gt 1 -or @($currentSteam | Where-Object {
+    $_.CommonSha256 -ne '4DB42166C9D1919083E5B03757B9E8D166145E9C39A410AC22415F1D71171DEB' -or
+    $_.Id -ne 'Nin Online Steam 57668CBF (validated core; restricted)' -or
+    $_.ActuationValidated -ne $true -or $_.ExperimentalTrial -ne $false -or
+    (@($_.ValidatedInputKinds) -join ',') -ne 'Turning,Stamina,TargetMemory' -or
+    @($_.ValidatedAttackModes).Count -ne 0 -or $_.PunishComboValidated -ne $false -or
+    $_.SelectedTarget.GlobalObject -ne 'Ku0ZF1aWYsJ' -or
+    $_.SelectedTarget.Kind -ne 'nJ5VIOJ8p8E' -or $_.SelectedTarget.Index -ne 'mpsVI6aspnF' -or
+    $_.SelectedTarget.PlayerKind -ne 1 -or $_.SelectedIndex -ne $null -or
+    $_.Facing -ne 'JLqVBnE8AGm' -or $_.Village -ne 'LVaVBYIhYqD'
+}).Count -ne 0) { throw 'Perfil Steam atual do pacote excede a validação restrita.' }
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Use uma versão estável nova: 1.1.0, 1.1.1 etc.' }
 if ($RepositoryUrl -notmatch '^https://github\.com/[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_.-]{1,100}/?$') { throw 'Informe a URL HTTPS do repositório PÚBLICO de releases, sem token.' }
 if (-not $FirebaseConfigPath) { $FirebaseConfigPath = Join-Path $root 'firebase.config.json' }
