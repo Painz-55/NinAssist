@@ -1,5 +1,11 @@
 # Validação do perfil Steam 2026-11-04 (segunda atualização)
 
+## 2026-11-26 — Steam atualizou novamente após a release `v1.2.4`
+
+`v1.2.4` foi publicada via tag do commit `1621938` com cinco assets Velopack; `v1.2.3` permaneceu intacta. O EXE instalado chegou a `1.2.4`, mas o log registrou “Abra exatamente um cliente NinOnline para conectar” quando o jogo não estava aberto; portanto **não houve teste final de conexão do app instalado**. O usuário adiou esse teste e suspeitou de outra atualização do jogo. Verificação estática confirmou DLLs Steam modificadas às 08:24:25: `NinOnline.dll` `57668CBF395C8A503ABA85C8D7181D5712701F7C88ADF5B6EA49EF54DCEEEC89`, `Common.dll` `4DB42166C9D1919083E5B03757B9E8D166145E9C39A410AC22415F1D71171DEB`. **Não correspondem ao perfil oficial de `v1.2.4` (`349E3190…/637E4DB9…`)**; `Unknown game build` e inputs OFF são o resultado seguro esperado no cliente Steam atual. Não modificar nem substituir a release existente para encobrir essa incompatibilidade.
+
+Comparação offline em `%LOCALAPPDATA%\Temp\opencode\NinAssist-steam-update-20261126-new-hash\schema-candidates.json`: candidatos estruturais para Roots/Globals/Actor, mas **9/21 mapeamentos mudaram de tipo** por ordinal (incluindo Name, Map, PixelX, Vitals, Buffs, Cast.PlayerEnd e o objeto de alvo). `BaselineFingerprintVerified=false`; a comparação é apenas hipótese, não prova de identidade ou semântica. **Não copiar offsets nem assinar perfil** para o novo par sem Raizen conectado, leituras passivas de identidade/mapa/alvo/vitais/terreno e ensaios mínimos dos inputs desejados. O usuário fará o teste mais tarde; nenhum input foi enviado nessa comparação.
+
 ## 2026-11-26 — revisão da prévia integrada Steam (código apenas; sem release)
 
 Na captura passiva simultânea de 120 s, 674/682 frames foram válidos (674 de navegação e jogadores), mapa 190, Raizen slot 11 e alvo KageSlayer slot 46. Cast ID 99 e Sub Água foram observados; alvo mudou entre vazio e KageSlayer. `View=null` nessa captura é do utilitário **legado** e não mede a projeção da prévia moderna.
